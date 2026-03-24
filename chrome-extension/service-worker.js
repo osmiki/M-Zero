@@ -319,7 +319,7 @@ async function captureLoop(tabId, windowId, { w, h, dpr }) {
       const vpH = window.innerHeight;
       try {
         const allCurrentFixed = Array.from(document.querySelectorAll("*")).filter(el => {
-          try { return window.getComputedStyle(el).position === "fixed"; } catch { return false; }
+          try { const p = window.getComputedStyle(el).position; return p === "fixed" || p === "sticky"; } catch { return false; }
         });
         for (const el of allCurrentFixed) {
           try {

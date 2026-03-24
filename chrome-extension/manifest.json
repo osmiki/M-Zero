@@ -1,7 +1,7 @@
 {
   "manifest_version": 3,
   "name": "Design QA Agent",
-  "version": "0.5.3",
+  "version": "0.5.4",
   "description": "Extract computed CSS from current page and upload to Design QA Agent.",
   "action": {
     "default_title": "Design QA",
