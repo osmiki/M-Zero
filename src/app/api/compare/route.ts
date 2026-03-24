@@ -249,7 +249,12 @@ export async function POST(req: Request) {
     try {
       const webBase64 = web.screenshotDataUrl?.replace(/^data:[^,]+,/, "") ?? null;
       if (webBase64) {
-        const figmaBase64 = await fetchFigmaFramePng({ personalAccessToken: token, fileKey, nodeId, scale: 1 });
+        // Claude Vision 최대 허용 크기: 8000px. Figma 프레임 크기 기반으로 안전한 scale 계산
+        const maxFigmaDim = rootFigmaBbox
+          ? Math.max(rootFigmaBbox.width, rootFigmaBbox.height)
+          : 812;
+        const safeScale = Math.min(1, Math.floor((3800 / maxFigmaDim) * 10) / 10); // 최대 3800px 목표, 소수점 1자리
+        const figmaBase64 = await fetchFigmaFramePng({ personalAccessToken: token, fileKey, nodeId, scale: Math.max(safeScale, 0.1) });
         visualQa = figmaBase64
           ? await runVisualCompare({ figmaBase64, webBase64 })
           : { ok: false, reason: "Figma 프레임 이미지를 가져올 수 없습니다" };
