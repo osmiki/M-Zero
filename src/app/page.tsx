@@ -650,7 +650,6 @@ export default function HomePage() {
 
               {/* ── Summary 배지 ── */}
               <div style={{ display: "flex", flexWrap: "wrap", gap: 6, marginBottom: 12, alignItems: "center" }}>
-                <span style={{ fontSize: 11, color: "rgba(255,255,255,0.4)", marginRight: 2 }}>결과</span>
                 {resp.summary.fail > 0 && (
                   <span style={{ background: "rgba(255,107,107,0.18)", border: "1px solid rgba(255,107,107,0.4)", borderRadius: 6, padding: "2px 8px", fontSize: 11, color: "#ff6b6b", fontWeight: 700 }}>
                     🔴 Fail {resp.summary.fail}
