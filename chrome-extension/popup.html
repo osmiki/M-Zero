@@ -1,0 +1,78 @@
+<!doctype html>
+<html>
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>Design QA</title>
+    <style>
+      body {
+        margin: 0;
+        font-family: ui-sans-serif, system-ui, -apple-system, Segoe UI, Roboto, Helvetica, Arial;
+        width: 320px;
+        background: #0b0c10;
+        color: rgba(255, 255, 255, 0.92);
+      }
+      .wrap {
+        padding: 12px;
+        display: grid;
+        gap: 10px;
+      }
+      .title {
+        font-weight: 700;
+        font-size: 14px;
+      }
+      .btn {
+        border: 1px solid rgba(255, 255, 255, 0.18);
+        background: linear-gradient(180deg, rgba(91, 140, 255, 0.35), rgba(91, 140, 255, 0.16));
+        color: rgba(255, 255, 255, 0.92);
+        padding: 10px 12px;
+        border-radius: 10px;
+        cursor: pointer;
+        font-weight: 700;
+      }
+      .btn:disabled {
+        opacity: 0.6;
+        cursor: not-allowed;
+      }
+      .muted {
+        font-size: 12px;
+        color: rgba(255, 255, 255, 0.72);
+        line-height: 1.4;
+      }
+      .mono {
+        font-family: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, "Liberation Mono", "Courier New",
+          monospace;
+        font-size: 12px;
+      }
+      .error {
+        color: rgba(255, 77, 79, 0.95);
+        font-size: 12px;
+        white-space: pre-wrap;
+      }
+      .ok {
+        color: rgba(82, 196, 26, 0.95);
+        font-size: 12px;
+        white-space: pre-wrap;
+      }
+      a {
+        color: rgba(91, 140, 255, 0.95);
+        text-decoration: none;
+      }
+    </style>
+  </head>
+  <body>
+    <div class="wrap">
+      <div class="title">Design QA Agent</div>
+      <div class="muted">현재 탭에서 computed style을 추출해 앱으로 업로드 후 결과 페이지를 엽니다.</div>
+      <button id="run" class="btn">Extract & Upload</button>
+      <div id="status" class="muted"></div>
+      <div id="msg" class="mono"></div>
+      <div id="err" class="error"></div>
+      <div class="muted">
+        앱 URL은 <a id="optionsLink" href="#">Options</a>에서 설정할 수 있어요.
+      </div>
+    </div>
+    <script type="module" src="popup.js"></script>
+  </body>
+</html>
+

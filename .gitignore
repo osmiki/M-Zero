@@ -1,0 +1,26 @@
+# dependencies
+node_modules/
+
+# Next.js build output
+.next/
+out/
+
+# local data (업로드된 web-data, 배포 환경에서는 volume에 저장)
+.dqa-web-data/
+
+# env files
+.env
+.env.local
+.env.*.local
+
+# logs
+npm-debug.log*
+*.log
+
+# OS
+.DS_Store
+Thumbs.db
+
+# TypeScript
+*.tsbuildinfo
+next-env.d.ts
