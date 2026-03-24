@@ -267,7 +267,6 @@ function summarize(results: RunResult[]) {
   for (const r of results) {
     if (!r.elementFound) missing++;
     if (r.severity === "pass") pass++;
-    else if (r.severity === "warn") warn++;
     else {
       fail++;
       if (r.compareMode === "strict") strictFail++;
