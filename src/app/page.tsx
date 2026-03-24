@@ -118,7 +118,7 @@ export default function HomePage() {
   const [resp, setResp] = useState<CompareResponse | null>(null);
   const [job, setJob] = useState<any | null>(null);
   const [selected, setSelected] = useState<MatchResult | null>(null);
-  const [resultTab, setResultTab] = useState<"screen" | "text" | "visual">("screen");
+  const [resultTab, setResultTab] = useState<"screen" | "text">("screen");
   const [screenshotUrl, setScreenshotUrl] = useState<string | null>(null);
   const [screenshotErr, setScreenshotErr] = useState<string | null>(null);
   const [showAll, setShowAll] = useState(false);
@@ -682,64 +682,9 @@ export default function HomePage() {
                 >
                   텍스트 정보
                 </button>
-                <button
-                  className={resultTab === "visual" ? "tabBtn tabBtnActive" : "tabBtn"}
-                  type="button"
-                  onClick={() => setResultTab("visual")}
-                >
-                  비주얼 QA
-                </button>
               </div>
 
-              {resultTab === "visual" ? (
-                /* ── 비주얼 QA 탭 ── */
-                <div style={{ marginTop: 12 }}>
-                  {(() => {
-                    const vqa = resp.ok ? resp.visualQa : null;
-                    if (!vqa) {
-                      return <div className="hint">비주얼 QA 결과가 없습니다. Compare를 다시 실행해주세요.</div>;
-                    }
-                    if (!vqa.ok) {
-                      return <div className="hint" style={{ color: "rgba(255,107,107,0.85)" }}>비주얼 QA 오류: {vqa.reason}</div>;
-                    }
-                    const failDiffs = vqa.diffs.filter((d) => d.severity === "fail");
-                    const passDiffs = vqa.diffs.filter((d) => d.severity === "pass");
-                    return (
-                      <div className="reportList">
-                        {vqa.diffs.length === 0 ? (
-                          <div className="hint">시각적 차이가 없습니다. 🎉</div>
-                        ) : (
-                          <>
-                            {failDiffs.map((d, i) => (
-                              <div key={i} className="card">
-                                <div className="cardTop">
-                                  <div style={{ display: "flex", alignItems: "center", gap: 8 }}>
-                                    <span className="tagFail">FAIL</span>
-                                    <span style={{ fontWeight: 600, fontSize: 13 }}>{d.area}</span>
-                                  </div>
-                                </div>
-                                <div style={{ fontSize: 12, color: "rgba(255,255,255,0.7)", marginTop: 4 }}>{d.description}</div>
-                              </div>
-                            ))}
-                            {passDiffs.map((d, i) => (
-                              <div key={`pass-${i}`} className="card">
-                                <div className="cardTop">
-                                  <div style={{ display: "flex", alignItems: "center", gap: 8 }}>
-                                    <span className="tagPass">PASS</span>
-                                    <span style={{ fontWeight: 600, fontSize: 13 }}>{d.area}</span>
-                                  </div>
-                                </div>
-                                <div style={{ fontSize: 12, color: "rgba(255,255,255,0.7)", marginTop: 4 }}>{d.description}</div>
-                              </div>
-                            ))}
-                          </>
-                        )}
-                        <div className="hint" style={{ marginTop: 8 }}>분석 모델: {vqa.model}</div>
-                      </div>
-                    );
-                  })()}
-                </div>
-              ) : resultTab === "screen" ? (
+              {resultTab === "screen" ? (
                 /* ── 화면 기준: 좌(뷰포트 맵) + 우(어노테이션 리스트) ── */
                 <div style={{ display: "flex", gap: 16, marginTop: 12, alignItems: "flex-start" }}>
 
@@ -1058,6 +1003,53 @@ export default function HomePage() {
                         );
                       })()
                     )}
+
+                    {/* ── 비주얼 QA 섹션 ── */}
+                    {(() => {
+                      const vqa = resp.ok ? resp.visualQa : null;
+                      if (!vqa) return null;
+                      return (
+                        <CollapsibleGroup
+                          label={
+                            vqa.ok
+                              ? vqa.diffs.filter((d) => d.severity === "fail").length > 0
+                                ? `비주얼 QA — ${vqa.diffs.filter((d) => d.severity === "fail").length}개 차이 발견`
+                                : "비주얼 QA — 차이 없음"
+                              : "비주얼 QA — 오류"
+                          }
+                          color={vqa.ok && vqa.diffs.some((d) => d.severity === "fail") ? "rgba(255,107,107,0.8)" : "rgba(255,255,255,0.3)"}
+                          defaultOpen={vqa.ok && vqa.diffs.some((d) => d.severity === "fail")}
+                        >
+                          {!vqa.ok ? (
+                            <div className="hint" style={{ color: "rgba(255,107,107,0.85)", fontSize: 11 }}>{vqa.reason}</div>
+                          ) : vqa.diffs.length === 0 ? (
+                            <div className="hint" style={{ fontSize: 11 }}>시각적 차이가 없습니다. 🎉</div>
+                          ) : (
+                            <>
+                              {vqa.diffs.filter((d) => d.severity === "fail").map((d, i) => (
+                                <div key={i} className="card" style={{ marginBottom: 4 }}>
+                                  <div style={{ display: "flex", alignItems: "center", gap: 6, marginBottom: 3 }}>
+                                    <span className="tagFail" style={{ fontSize: 9 }}>FAIL</span>
+                                    <span style={{ fontWeight: 600, fontSize: 12 }}>{d.area}</span>
+                                  </div>
+                                  <div style={{ fontSize: 11, color: "rgba(255,255,255,0.6)" }}>{d.description}</div>
+                                </div>
+                              ))}
+                              {vqa.diffs.filter((d) => d.severity === "pass").map((d, i) => (
+                                <div key={`p${i}`} className="card" style={{ marginBottom: 4, opacity: 0.6 }}>
+                                  <div style={{ display: "flex", alignItems: "center", gap: 6, marginBottom: 3 }}>
+                                    <span className="tagPass" style={{ fontSize: 9 }}>PASS</span>
+                                    <span style={{ fontWeight: 600, fontSize: 12 }}>{d.area}</span>
+                                  </div>
+                                  <div style={{ fontSize: 11, color: "rgba(255,255,255,0.6)" }}>{d.description}</div>
+                                </div>
+                              ))}
+                              <div style={{ fontSize: 10, color: "rgba(255,255,255,0.25)", marginTop: 4 }}>by {vqa.model}</div>
+                            </>
+                          )}
+                        </CollapsibleGroup>
+                      );
+                    })()}
                   </div>
                 </div>
               ) : (

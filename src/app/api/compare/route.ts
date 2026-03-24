@@ -249,7 +249,7 @@ export async function POST(req: Request) {
     try {
       const webBase64 = web.screenshotDataUrl?.replace(/^data:[^,]+,/, "") ?? null;
       if (webBase64) {
-        const figmaBase64 = await fetchFigmaFramePng({ personalAccessToken: token, fileKey, nodeId });
+        const figmaBase64 = await fetchFigmaFramePng({ personalAccessToken: token, fileKey, nodeId, scale: 1 });
         visualQa = figmaBase64
           ? await runVisualCompare({ figmaBase64, webBase64 })
           : { ok: false, reason: "Figma 프레임 이미지를 가져올 수 없습니다" };
