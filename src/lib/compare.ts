@@ -136,7 +136,7 @@ export function compareTokenToComputed(
   token: FigmaToken,
   computedPayload: ComputedPayload,
   cfg: CompareConfig
-): { severity: "pass" | "warn" | "fail"; compareMode: "strict" | "foundational"; diffs: DiffItem[]; rows: CompareRow[] } {
+): { severity: "pass" | "fail"; compareMode: "strict" | "foundational"; diffs: DiffItem[]; rows: CompareRow[] } {
   const diffs: DiffItem[] = [];
   const rows: CompareRow[] = [];
   const compareMode = cfg.compareMode ?? "strict";
@@ -411,24 +411,18 @@ export function compareTokenToComputed(
   return { severity, compareMode, diffs, rows };
 }
 
-function severityFromDiffs(diffs: DiffItem[], thresholdPx: number): "pass" | "warn" | "fail" {
+function severityFromDiffs(diffs: DiffItem[], thresholdPx: number): "pass" | "fail" {
   if (diffs.length === 0) return "pass";
-  let hasFail = false;
-  let hasWarn = false;
   for (const d of diffs) {
     if (d.key === "element") return "fail";
-    if (d.warnOnly) { hasWarn = true; continue; }
+    if (d.warnOnly) return "fail";
     if (typeof d.delta === "number" && Number.isFinite(d.delta)) {
-      const abs = Math.abs(d.delta);
-      if (abs <= thresholdPx) hasWarn = true;
-      else hasFail = true;
+      if (Math.abs(d.delta) > thresholdPx) return "fail";
     } else {
       // Non-numeric mismatch (color/fontWeight/animation class)
-      hasFail = true;
+      return "fail";
     }
   }
-  if (hasFail) return "fail";
-  if (hasWarn) return "warn";
   return "pass";
 }
 

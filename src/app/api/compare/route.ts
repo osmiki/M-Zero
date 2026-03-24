@@ -24,7 +24,7 @@ type RunResult = {
   className: string;
   selector: string;
   matchedWebClassName?: string | null;
-  severity: "pass" | "warn" | "fail";
+  severity: "pass" | "fail";
   /** strict = COMPONENT/INSTANCE, foundational = FRAME/GROUP 등 일반 레이어 */
   compareMode: "strict" | "foundational";
   diffs: Array<{

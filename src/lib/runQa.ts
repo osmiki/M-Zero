@@ -266,16 +266,14 @@ export async function runQa(
 
 function summarize(results: RunSuccess["results"]) {
   let pass = 0;
-  let warn = 0;
   let fail = 0;
   let missing = 0;
   for (const r of results) {
     if (!r.elementFound) missing++;
     if (r.severity === "pass") pass++;
-    else if (r.severity === "warn") warn++;
     else fail++;
   }
-  return { total: results.length, pass, warn, fail, missing };
+  return { total: results.length, pass, warn: 0, fail, missing };
 }
 
 function cssEscape(s: string) {

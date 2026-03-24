@@ -34,7 +34,7 @@ const VIEWPORT_GROUPS = [
 ] as const;
 
 
-type Severity = "pass" | "warn" | "fail";
+type Severity = "pass" | "fail";
 type CompareMode = "strict" | "foundational";
 
 type DiffItem = {
@@ -93,14 +93,7 @@ const VIEWPORTS: Record<ViewportPreset, { width: number; height: number; deviceS
 };
 
 function severityToLabel(s: Severity) {
-  switch (s) {
-    case "pass":
-      return "PASS";
-    case "warn":
-      return "WARN";
-    case "fail":
-      return "FAIL";
-  }
+  return s === "pass" ? "PASS" : "FAIL";
 }
 
 export default function HomePage() {
@@ -142,7 +135,7 @@ export default function HomePage() {
     }
   }, []);
 
-  // 화면 기준 탭: 전체 페이지 warn/fail 항목 오버레이 (스크롤 지도)
+  // 화면 기준 탭: 전체 페이지 fail 항목 오버레이 (스크롤 지도)
   const overlayItems = useMemo(() => {
     if (!resp || !resp.ok) return [];
     const { width: vw } = resp.meta.web.viewport;
@@ -150,7 +143,7 @@ export default function HomePage() {
     return resp.results
       .filter((r) => {
         if (!r.elementFound || !r.bbox) return false;
-        if (r.severity !== "fail" && r.severity !== "warn") return false;
+        if (r.severity !== "fail") return false;
         return r.bbox.x < vw;
       })
       .map((r) => ({ ...r, bbox: r.bbox! }))
@@ -160,7 +153,7 @@ export default function HomePage() {
   // 텍스트 탭: 전체 or fail/warn
   const textItems = useMemo(() => {
     if (!resp || !resp.ok) return [];
-    return showAll ? resp.results : resp.results.filter((r) => r.severity === "fail" || r.severity === "warn");
+    return showAll ? resp.results : resp.results.filter((r) => r.severity === "fail");
   }, [resp, showAll]);
 
   // 화면 기준 탭: bbox 근접 항목을 그룹핑 (지도 오버레이 중복 표시 방지)
@@ -604,7 +597,6 @@ export default function HomePage() {
                     <div className="historyMeta" style={{ marginTop: 3 }}>
                       <span className="historyBadge">{new Date(e.timestamp).toLocaleDateString("ko-KR", { month: "2-digit", day: "2-digit", hour: "2-digit", minute: "2-digit" })}</span>
                       {e.summary.fail > 0 && <span className="historyBadge historyBadgeFail">F:{e.summary.fail}</span>}
-                      {e.summary.warn > 0 && <span className="historyBadge historyBadgeWarn">W:{e.summary.warn}</span>}
                       <span className="historyBadge">P:{e.summary.pass}</span>
                       <span className="historyBadge">{e.viewport}px</span>
                     </div>
@@ -655,11 +647,6 @@ export default function HomePage() {
                 {resp.summary.fail > 0 && (
                   <span style={{ background: "rgba(255,107,107,0.18)", border: "1px solid rgba(255,107,107,0.4)", borderRadius: 6, padding: "2px 8px", fontSize: 11, color: "#ff6b6b", fontWeight: 700 }}>
                     🔴 Fail {resp.summary.fail}
-                  </span>
-                )}
-                {resp.summary.warn > 0 && (
-                  <span style={{ background: "rgba(255,211,105,0.12)", border: "1px solid rgba(255,211,105,0.3)", borderRadius: 6, padding: "2px 8px", fontSize: 11, color: "rgba(255,211,105,0.9)", fontWeight: 700 }}>
-                    🟡 Warn {resp.summary.warn}
                   </span>
                 )}
                 {resp.summary.pass > 0 && (
@@ -857,12 +844,12 @@ export default function HomePage() {
                     {overlayItems.length === 0 ? (
                       <div>
                         {textItems.length === 0 ? (
-                          <div className="hint">warn/fail 항목이 없습니다. 🎉</div>
+                          <div className="hint">fail 항목이 없습니다. 🎉</div>
                         ) : (
                           <div className="hint" style={{ lineHeight: 1.8 }}>
                             <span style={{ color: "rgba(255,107,107,0.85)" }}>●</span>{" "}
                             뷰포트에 표시할 항목이 없습니다.<br />
-                            <strong style={{ color: "rgba(255,255,255,0.7)" }}>{textItems.length}개</strong>의 warn/fail 항목이 있으나
+                            <strong style={{ color: "rgba(255,255,255,0.7)" }}>{textItems.length}개</strong>의 fail 항목이 있으나
                             웹에서 클래스를 찾지 못했거나(Missing) 뷰포트 밖에 있습니다.<br />
                             <button
                               type="button"
@@ -934,7 +921,7 @@ export default function HomePage() {
                                     <div style={{ display: "flex", gap: 4, flexShrink: 0 }}>
                                       {isFixed  && <span className="tag tagFixed">수정완료</span>}
                                       {isSkipped && <span className="tag tagSkip">Skip</span>}
-                                      <span className={`tag ${it.severity === "warn" ? "tagWarn" : "tagFail"}`}>{severityToLabel(it.severity)}</span>
+                                      <span className={`tag tagFail`}>{severityToLabel(it.severity)}</span>
                                     </div>
                                   </div>
 
@@ -1097,7 +1084,7 @@ export default function HomePage() {
                                       <div style={{ display: "flex", gap: 6, alignItems: "center", flexShrink: 0 }}>
                                         {isSkipped && <span className="tag tagSkip">Skip</span>}
                                         {isFixed && <span className="tag tagFixed">수정완료</span>}
-                                        <div className={`tag ${isPass ? "tagPass" : r.severity === "warn" ? "tagWarn" : "tagFail"}`}>
+                                        <div className={`tag ${isPass ? "tagPass" : "tagFail"}`}>
                                           {isPass ? "PASS" : severityToLabel(r.severity)}
                                         </div>
                                       </div>
