@@ -391,7 +391,9 @@ export default function HomePage() {
   return (
     <main className="container">
       <div className="title">
-        <h1 style={{ fontFamily: "YouandiTitle, sans-serif" }}>M. zero</h1>
+        <h1 style={{ margin: 0, lineHeight: 1, fontFamily: "-apple-system, BlinkMacSystemFont, 'Helvetica Neue', Arial, sans-serif", fontWeight: "500", letterSpacing: "-0.03em" }}>
+          <span style={{ fontSize: "28px", verticalAlign: "baseline" }}>M</span><span style={{ fontSize: "26px", verticalAlign: "baseline", margin: "0 2px" }}>.</span><span style={{ fontSize: "26px", verticalAlign: "baseline", letterSpacing: "0.02em" }}>zero</span>
+        </h1>
       </div>
 
       <div className="grid">
