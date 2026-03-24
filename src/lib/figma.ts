@@ -433,6 +433,29 @@ export async function assertPersonalAccessToken(token: string): Promise<void> {
   );
 }
 
+export async function fetchFigmaFramePng(args: {
+  personalAccessToken: string;
+  fileKey: string;
+  nodeId: string; // colon format e.g. "0:2789"
+  scale?: number;
+}): Promise<string | null> {
+  try {
+    const scale = args.scale ?? 2;
+    const url = `https://api.figma.com/v1/images/${encodeURIComponent(args.fileKey)}?ids=${encodeURIComponent(args.nodeId)}&format=png&scale=${scale}`;
+    const res = await fetchWithTimeout(url, { headers: { "X-Figma-Token": args.personalAccessToken }, cache: "no-store" }, 20_000);
+    if (!res.ok) return null;
+    const json = await res.json() as { images?: Record<string, string | null> };
+    const cdnUrl = json.images?.[args.nodeId] ?? null;
+    if (!cdnUrl) return null;
+    const imgRes = await fetchWithTimeout(cdnUrl, {}, 20_000);
+    if (!imgRes.ok) return null;
+    const buffer = await imgRes.arrayBuffer();
+    return Buffer.from(buffer).toString("base64");
+  } catch {
+    return null;
+  }
+}
+
 async function fetchWithTimeout(input: RequestInfo | URL, init: RequestInit, timeoutMs: number) {
   const controller = new AbortController();
   const id = setTimeout(() => controller.abort(), timeoutMs);
