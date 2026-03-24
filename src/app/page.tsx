@@ -391,7 +391,7 @@ export default function HomePage() {
   return (
     <main className="container">
       <div className="title">
-        <h1>M-Zero</h1>
+        <h1>M-ZERO</h1>
       </div>
 
       <div className="grid">
@@ -663,11 +663,6 @@ export default function HomePage() {
                 {resp.summary.pass > 0 && (
                   <span style={{ background: "rgba(82,196,26,0.1)", border: "1px solid rgba(82,196,26,0.25)", borderRadius: 6, padding: "2px 8px", fontSize: 11, color: "rgba(100,220,80,0.85)", fontWeight: 700 }}>
                     ✅ Pass {resp.summary.pass}
-                  </span>
-                )}
-                {resp.summary.missing > 0 && (
-                  <span style={{ background: "rgba(255,255,255,0.05)", border: "1px solid rgba(255,255,255,0.1)", borderRadius: 6, padding: "2px 8px", fontSize: 11, color: "rgba(255,255,255,0.4)" }}>
-                    Missing {resp.summary.missing}
                   </span>
                 )}
               </div>
