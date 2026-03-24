@@ -1,6 +1,6 @@
 {
   "manifest_version": 3,
-  "name": "M-ZERO",
+  "name": "M. zero",
   "version": "0.5.7",
   "description": "Extract computed CSS from current page and upload to Design QA Agent.",
   "action": {

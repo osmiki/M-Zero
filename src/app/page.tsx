@@ -391,7 +391,7 @@ export default function HomePage() {
   return (
     <main className="container">
       <div className="title">
-        <h1>M-ZERO</h1>
+        <h1 style={{ fontFamily: "YouandiTitle, sans-serif" }}>M. zero</h1>
       </div>
 
       <div className="grid">
