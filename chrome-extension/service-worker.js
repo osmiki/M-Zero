@@ -95,7 +95,7 @@ async function run() {
   // (img-src CSP 우회 + canvas taint 없음)
   let screenshotDataUrl = null;
   if (strips && strips.length >= 1) {
-    screenshotDataUrl = await stitchInPage(tabId, strips, vpRaw);
+    screenshotDataUrl = await stitchInPage(tabId, strips, vpRaw, fixedRects);
   }
   // 합성 실패 → 단일 뷰포트 폴백
   if (!screenshotDataUrl) {
@@ -470,11 +470,12 @@ async function captureLoop(tabId, windowId, { w, h, dpr }) {
 //  - createImageBitmap(Blob) 방식: img-src CSP 우회, canvas taint 없음
 //  - strips 배열을 executeScript args로 전달 → 페이지에서 canvas.toDataURL()
 // ══════════════════════════════════════════════════════════════════════════
-async function stitchInPage(tabId, strips, { w, h, dpr }) {
+async function stitchInPage(tabId, strips, { w, h, dpr }, fixedRects) {
   try {
+    const topCrop = fixedRects?.topH ?? 0; // 탑바 높이 (2번째 스트립부터 잘라낼 px)
     const [{ result }] = await chrome.scripting.executeScript({
       target: { tabId },
-      func: async (strips, vpW, vpH, dpr) => {
+      func: async (strips, vpW, vpH, dpr, topCrop) => {
         try {
           const last = strips[strips.length - 1];
           const totalH = last.scrollY + vpH;
@@ -485,13 +486,21 @@ async function stitchInPage(tabId, strips, { w, h, dpr }) {
           const ctx = canvas.getContext("2d");
           if (!ctx) return null;
 
-          for (const { scrollY: sy, dataUrl } of strips) {
+          for (let i = 0; i < strips.length; i++) {
+            const { scrollY: sy, dataUrl } = strips[i];
             const m = dataUrl.match(/^data:([^;]+);base64,(.+)$/s);
             if (!m) continue;
             const bytes = Uint8Array.from(atob(m[2]), c => c.charCodeAt(0));
             const blob  = new Blob([bytes], { type: m[1] });
             const bmp   = await createImageBitmap(blob);
-            ctx.drawImage(bmp, 0, Math.round(sy * dpr));
+            // 첫 스트립은 전체 그대로, 이후 스트립은 탑바 높이만큼 상단 크롭
+            const skip = (i === 0) ? 0 : Math.round(topCrop * dpr);
+            const srcH = bmp.height - skip;
+            const destY = Math.round(sy * dpr) + skip;
+            const destH = Math.min(srcH, canvas.height - destY);
+            if (destH > 0) {
+              ctx.drawImage(bmp, 0, skip, bmp.width, srcH, 0, destY, bmp.width, destH);
+            }
             bmp.close();
           }
 
@@ -501,7 +510,7 @@ async function stitchInPage(tabId, strips, { w, h, dpr }) {
           return null;
         }
       },
-      args: [strips, w, h, dpr],
+      args: [strips, w, h, dpr, topCrop],
       world: "MAIN",
     });
     return result ?? null;
