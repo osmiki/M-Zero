@@ -62,16 +62,6 @@ type MatchResult = {
   elementFound: boolean;
 };
 
-type VisualDiffItem = {
-  area: string;
-  description: string;
-  severity: "fail" | "pass";
-};
-
-type VisualQaResult =
-  | { ok: true; diffs: VisualDiffItem[]; model: string }
-  | { ok: false; reason: string };
-
 type CompareResponse =
   | {
       ok: true;
@@ -83,7 +73,6 @@ type CompareResponse =
         foundationalFail: number;
       };
       results: MatchResult[];
-      visualQa?: VisualQaResult | null;
       meta: {
         web: { href: string; extractedAt: number; viewport: { width: number; height: number; devicePixelRatio: number }; scrollHeight?: number; scrollY?: number; webDataId: string };
         figma: { fileKey: string; nodeId: string };
@@ -1003,53 +992,6 @@ export default function HomePage() {
                         );
                       })()
                     )}
-
-                    {/* ── 비주얼 QA 섹션 ── */}
-                    {(() => {
-                      const vqa = resp.ok ? resp.visualQa : null;
-                      if (!vqa) return null;
-                      return (
-                        <CollapsibleGroup
-                          label={
-                            vqa.ok
-                              ? vqa.diffs.filter((d) => d.severity === "fail").length > 0
-                                ? `비주얼 QA — ${vqa.diffs.filter((d) => d.severity === "fail").length}개 차이 발견`
-                                : "비주얼 QA — 차이 없음"
-                              : "비주얼 QA — 오류"
-                          }
-                          color={vqa.ok && vqa.diffs.some((d) => d.severity === "fail") ? "rgba(255,107,107,0.8)" : "rgba(255,255,255,0.3)"}
-                          defaultOpen={vqa.ok && vqa.diffs.some((d) => d.severity === "fail")}
-                        >
-                          {!vqa.ok ? (
-                            <div className="hint" style={{ color: "rgba(255,107,107,0.85)", fontSize: 11 }}>{vqa.reason}</div>
-                          ) : vqa.diffs.length === 0 ? (
-                            <div className="hint" style={{ fontSize: 11 }}>시각적 차이가 없습니다. 🎉</div>
-                          ) : (
-                            <>
-                              {vqa.diffs.filter((d) => d.severity === "fail").map((d, i) => (
-                                <div key={i} className="card" style={{ marginBottom: 4 }}>
-                                  <div style={{ display: "flex", alignItems: "center", gap: 6, marginBottom: 3 }}>
-                                    <span className="tagFail" style={{ fontSize: 9 }}>FAIL</span>
-                                    <span style={{ fontWeight: 600, fontSize: 12 }}>{d.area}</span>
-                                  </div>
-                                  <div style={{ fontSize: 11, color: "rgba(255,255,255,0.6)" }}>{d.description}</div>
-                                </div>
-                              ))}
-                              {vqa.diffs.filter((d) => d.severity === "pass").map((d, i) => (
-                                <div key={`p${i}`} className="card" style={{ marginBottom: 4, opacity: 0.6 }}>
-                                  <div style={{ display: "flex", alignItems: "center", gap: 6, marginBottom: 3 }}>
-                                    <span className="tagPass" style={{ fontSize: 9 }}>PASS</span>
-                                    <span style={{ fontWeight: 600, fontSize: 12 }}>{d.area}</span>
-                                  </div>
-                                  <div style={{ fontSize: 11, color: "rgba(255,255,255,0.6)" }}>{d.description}</div>
-                                </div>
-                              ))}
-                              <div style={{ fontSize: 10, color: "rgba(255,255,255,0.25)", marginTop: 4 }}>by {vqa.model}</div>
-                            </>
-                          )}
-                        </CollapsibleGroup>
-                      );
-                    })()}
                   </div>
                 </div>
               ) : (

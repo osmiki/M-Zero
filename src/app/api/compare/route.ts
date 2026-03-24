@@ -1,11 +1,10 @@
 import { NextResponse } from "next/server";
 import { z } from "zod";
-import { assertPersonalAccessToken, extractFigmaTokensFromNode, fetchFigmaFramePng, normalizeNodeId, parseFigmaDevModeUrl } from "@/lib/figma";
+import { assertPersonalAccessToken, extractFigmaTokensFromNode, normalizeNodeId, parseFigmaDevModeUrl } from "@/lib/figma";
 import { compareTokenToComputed, type CompareConfig, type CompareRow } from "@/lib/compare";
 import { getWebData } from "@/lib/webDataStore";
 import { cookies } from "next/headers";
 import { getSession, getSessionCookieName } from "@/lib/sessionStore";
-import { runVisualCompare, type VisualCompareResult } from "@/lib/visualCompare";
 
 export const runtime = "nodejs";
 
@@ -244,32 +243,10 @@ export async function POST(req: Request) {
 
     const summary = summarize(results);
 
-    // Visual QA: Claude Vision comparison
-    let visualQa: VisualCompareResult | null = null;
-    try {
-      const webBase64 = web.screenshotDataUrl?.replace(/^data:[^,]+,/, "") ?? null;
-      if (webBase64) {
-        // Claude Vision 최대 허용 크기: 8000px. Figma 프레임 크기 기반으로 안전한 scale 계산
-        const maxFigmaDim = rootFigmaBbox
-          ? Math.max(rootFigmaBbox.width, rootFigmaBbox.height)
-          : 812;
-        const safeScale = Math.min(1, Math.floor((3800 / maxFigmaDim) * 10) / 10); // 최대 3800px 목표, 소수점 1자리
-        const figmaBase64 = await fetchFigmaFramePng({ personalAccessToken: token, fileKey, nodeId, scale: Math.max(safeScale, 0.1) });
-        visualQa = figmaBase64
-          ? await runVisualCompare({ figmaBase64, webBase64 })
-          : { ok: false, reason: "Figma 프레임 이미지를 가져올 수 없습니다" };
-      } else {
-        visualQa = { ok: false, reason: "웹 스크린샷 없음 — 확장프로그램을 다시 실행해주세요" };
-      }
-    } catch (e) {
-      visualQa = { ok: false, reason: e instanceof Error ? e.message : String(e) };
-    }
-
     return NextResponse.json({
       ok: true,
       summary,
       results,
-      visualQa,
       meta: {
         web: { href: web.href, extractedAt: web.extractedAt, viewport: web.viewport, scrollHeight: web.scrollHeight, scrollY: web.scrollY, webDataId: body.webDataId },
         figma: { fileKey, nodeId },
