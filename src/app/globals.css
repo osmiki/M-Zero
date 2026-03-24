@@ -31,7 +31,7 @@ body {
 body {
   margin: 0;
   background: radial-gradient(1200px 600px at 10% 0%, rgba(91, 140, 255, 0.25), transparent 55%),
-    radial-gradient(900px 500px at 90% 20%, rgba(82, 196, 26, 0.18), transparent 60%),
+    radial-gradient(900px 500px at 90% 20%, rgba(201, 246, 176, 0.18), transparent 60%),
     var(--bg);
   color: var(--text);
   font-family: ui-sans-serif, system-ui, -apple-system, Segoe UI, Roboto, Helvetica, Arial,
@@ -197,8 +197,8 @@ textarea {
 
 .btn {
   border: 1px solid rgba(255, 255, 255, 0.18);
-  background: linear-gradient(180deg, rgba(91, 140, 255, 0.35), rgba(91, 140, 255, 0.16));
-  color: var(--text);
+  background: #C9F6B0;
+  color: #0b0c10;
   padding: 10px 12px;
   border-radius: 10px;
   cursor: pointer;

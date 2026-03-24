@@ -391,8 +391,8 @@ export default function HomePage() {
   return (
     <main className="container">
       <div className="title">
-        <h1 style={{ margin: 0, lineHeight: 1, fontFamily: "-apple-system, BlinkMacSystemFont, 'Helvetica Neue', Arial, sans-serif", fontWeight: "500", letterSpacing: "-0.03em" }}>
-          <span style={{ fontSize: "28px", verticalAlign: "baseline" }}>M</span><span style={{ fontSize: "26px", verticalAlign: "baseline", margin: "0 2px" }}>.</span><span style={{ fontSize: "26px", verticalAlign: "baseline", letterSpacing: "0.02em" }}>zero</span>
+        <h1 style={{ margin: 0, lineHeight: 1 }}>
+          <img src="/m-zero-logo.svg" alt="M.zero" style={{ height: "24px", display: "block", marginLeft: "4px" }} />
         </h1>
       </div>
 
