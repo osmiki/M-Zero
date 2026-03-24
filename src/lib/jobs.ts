@@ -19,7 +19,7 @@ export type RunSuccess = {
   results: Array<{
     className: string;
     selector: string;
-    severity: "pass" | "warn" | "fail";
+    severity: "pass" | "fail";
     diffs: Array<{
       key: string;
       figma?: string | number | null;
