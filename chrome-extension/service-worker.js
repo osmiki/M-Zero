@@ -416,9 +416,9 @@ async function captureLoop(tabId, windowId, { w, h, dpr }) {
         const vpH = window.innerHeight;
         let topH = 0;
         let botY = vpH;
-        // 현재 DOM에서 position:fixed 요소를 직접 재조회 (stale ref 방지)
+        // 현재 DOM에서 position:fixed/sticky 요소를 직접 재조회 (stale ref 방지)
         const allFixed = Array.from(document.querySelectorAll("*")).filter(el => {
-          try { return window.getComputedStyle(el).position === "fixed"; } catch { return false; }
+          try { const p = window.getComputedStyle(el).position; return p === "fixed" || p === "sticky"; } catch { return false; }
         });
         for (const el of allFixed) {
           try {
