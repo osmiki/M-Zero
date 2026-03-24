@@ -2,7 +2,7 @@ const originInput = document.getElementById("origin");
 const saveBtn = document.getElementById("save");
 const savedEl = document.getElementById("saved");
 
-const DEFAULT_ORIGIN = "http://localhost:3022";
+const DEFAULT_ORIGIN = "https://m-zero-production.up.railway.app";
 const LEGACY_DEFAULT_ORIGINS = [
   "http://127.0.0.1:3023",
   "http://127.0.0.1:3024",

@@ -1,4 +1,4 @@
-const DEFAULT_ORIGIN = "http://localhost:3022";
+const DEFAULT_ORIGIN = "https://m-zero-production.up.railway.app";
 
 const PICK_KEYS = [
   "width","height",
