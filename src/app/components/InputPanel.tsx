@@ -82,6 +82,8 @@ export function InputPanel({
     }
     const payload = { bbox: { x: rect.x, y: rect.y, width: rect.width, height: rect.height }, classList: cls, computed };
     for (const c of cls) { if (!elements[c]) elements[c] = payload; }
+    const slot = el.dataset && el.dataset.slot;
+    if (slot && !elements[slot]) elements[slot] = payload;
   }
   const data = { href: location.href, viewport: { width: window.innerWidth, height: window.innerHeight, devicePixelRatio: window.devicePixelRatio || 1 }, extractedAt: Date.now(), elements };
   fetch(ENDPOINT, { method: 'POST', headers: { 'content-type': 'application/json' }, body: JSON.stringify(data) })
