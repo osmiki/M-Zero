@@ -170,9 +170,19 @@ export async function POST(req: Request) {
         continue;
       }
 
-      // ── 2순위: 정규화 이름 매칭 (Product-List-Grid ↔ product-list-grid 등) ──
+      // ── 2순위: 정규화 이름 매칭 (Product-List-Grid ↔ product-list-grid, product-list 등) ──
+      // exact 정규화 → prefix 포함 순으로 시도 (최소 8자 이상만)
       const canonicalKey = canonicalClassKey(className);
-      const normalizedEntry = canonicalKey ? webByCanonical.get(canonicalKey) : null;
+      let normalizedEntry = canonicalKey ? webByCanonical.get(canonicalKey) : null;
+      if (!normalizedEntry && canonicalKey && canonicalKey.length >= 8) {
+        for (const [webKey, entry] of webByCanonical) {
+          if (webKey.length < 6) continue;
+          if (canonicalKey.startsWith(webKey) || webKey.startsWith(canonicalKey)) {
+            normalizedEntry = entry;
+            break;
+          }
+        }
+      }
       if (normalizedEntry) {
         const out = compareTokenToComputed(t, { classList: normalizedEntry.entry.classList, computed: normalizedEntry.entry.computed }, compareConfig);
         const fp = normalizedEntry.entry.computed?.['_fixedPosition'];
