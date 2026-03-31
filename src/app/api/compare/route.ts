@@ -454,11 +454,12 @@ function findFailingChildBboxes(
   // Y 위치 오름차순 정렬 (위에 있는 요소 = 제목 우선), 같은 Y면 큰 면적 우선
   candidates.sort((a, b_) => a.y !== b_.y ? a.y - b_.y : b_.area - a.area);
 
-  // 엄마 높이의 상위 35% 영역을 "타이틀 존"으로 간주
-  const titleZoneBottom = parentBbox.y + parentBbox.height * 0.35;
+  // 엄마 높이의 상위 15% 영역만 "타이틀 존"으로 간주 (긴 리스트 모듈에서 상품 영역 제외)
+  const titleZoneBottom = parentBbox.y + parentBbox.height * 0.15;
   const inTitleZone = candidates.filter(c => c.bbox.y + c.bbox.height <= titleZoneBottom);
 
-  const picked = (inTitleZone.length > 0 ? inTitleZone : candidates).slice(0, 3);
+  // 박스는 최대 1개만 (가장 위에 있는 대표 텍스트 요소)
+  const picked = (inTitleZone.length > 0 ? inTitleZone : candidates).slice(0, 1);
   return picked.map(c => c.bbox);
 }
 
