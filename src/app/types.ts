@@ -38,6 +38,8 @@ export type MatchResult = {
   }>;
   bbox?: { x: number; y: number; width: number; height: number } | null;
   textBbox?: { x: number; y: number; width: number; height: number } | null;
+  /** 엄마 컴포넌트 내부의 실제 failing 자식 요소 bbox 목록 (텍스트 diff 기반) */
+  childBboxes?: Array<{ x: number; y: number; width: number; height: number }> | null;
   fixedPosition?: "top" | "bottom" | null;
   elementFound: boolean;
 };

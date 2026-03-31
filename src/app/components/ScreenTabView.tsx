@@ -98,6 +98,61 @@ export function ScreenTabView({
                     const h = Math.max(Math.min(rawBottom, 100) - top, 0.5);
                     const isSelected = group.items.some((i) => selected?.className === i.className);
                     const color = group.severity === "fail" ? "rgba(255,107,107,0.95)" : "rgba(255,211,105,0.95)";
+
+                    // childBboxes가 있으면 자식 요소들을 각각 박스로 표시
+                    const childBboxes = it.childBboxes && it.childBboxes.length > 0 ? it.childBboxes : null;
+
+                    if (childBboxes) {
+                      return (
+                        <div key={it.className} style={{ position: "absolute", inset: 0, overflow: "visible", pointerEvents: "none" }}>
+                          {childBboxes.map((cb, cbIdx) => {
+                            let cbBox = cb;
+                            if (it.fixedPosition === "bottom") {
+                              const vpH = viewportFromWebData.viewportHeight;
+                              const scrollH = viewportFromWebData.height;
+                              cbBox = { ...cb, y: scrollH - vpH + cb.y };
+                            }
+                            const rawR = cbBox.x * scaleX + cbBox.width * scaleX;
+                            const rawB = cbBox.y * scaleY + cbBox.height * scaleY;
+                            const cl = Math.max(0, Math.min(cbBox.x * scaleX, 99));
+                            const ct = Math.max(0, Math.min(cbBox.y * scaleY, 99));
+                            const cw = Math.max(Math.min(rawR, 100) - cl, 0.5);
+                            const ch = Math.max(Math.min(rawB, 100) - ct, 0.5);
+                            const badgeOnTop = ct > 2;
+                            return (
+                              <button
+                                key={`${it.className}-child-${cbIdx}`}
+                                ref={cbIdx === 0 && isSelected ? selectedMarkerRef : undefined}
+                                type="button"
+                                onClick={() => setSelected(isSelected ? null : group.items[0])}
+                                title={group.items.map((i) => `.${i.className} (${severityToLabel(i.severity)})`).join(", ")}
+                                style={{
+                                  position: "absolute", left: `${cl}%`, top: `${ct}%`, width: `${cw}%`, height: `${ch}%`,
+                                  border: `2px solid ${color}`, background: isSelected ? color.replace("0.95", "0.22") : "transparent",
+                                  borderRadius: 3, boxShadow: "0 0 0 1px rgba(0,0,0,0.4)", cursor: "pointer", padding: 0,
+                                  zIndex: isSelected ? 2 : 1, overflow: "visible", pointerEvents: "auto",
+                                }}
+                              >
+                                {cbIdx === 0 && (
+                                  <div style={{
+                                    position: "absolute", top: badgeOnTop ? -10 : "auto", bottom: badgeOnTop ? "auto" : -10, left: -1,
+                                    minWidth: 17, height: 17, borderRadius: 9, background: color,
+                                    color: group.severity === "fail" ? "#fff" : "#000",
+                                    fontSize: 9, fontWeight: 800, display: "flex", alignItems: "center", justifyContent: "center",
+                                    padding: "0 4px", pointerEvents: "none", lineHeight: 1, boxShadow: "0 1px 4px rgba(0,0,0,0.5)", zIndex: 10, gap: 2,
+                                  }}>
+                                    <span>{gIdx + 1}</span>
+                                    {count > 1 && <span style={{ opacity: 0.75, fontSize: 8 }}>+{count - 1}</span>}
+                                  </div>
+                                )}
+                              </button>
+                            );
+                          })}
+                        </div>
+                      );
+                    }
+
+                    // childBboxes 없음 → 기존 엄마 컴포넌트 bbox로 박스 표시
                     const badgeOnTop = top > 2;
                     return (
                       <button
