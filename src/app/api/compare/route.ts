@@ -123,7 +123,7 @@ export async function POST(req: Request) {
     const rootFigmaX = rootFigmaBbox?.x ?? 0;
     const rootFigmaY = rootFigmaBbox?.y ?? 0;
 
-    const IOU_THRESHOLD = 0.80;
+    const IOU_THRESHOLD = 0.55;
 
     const STRICT_NODE_TYPES = new Set(["COMPONENT", "INSTANCE", "COMPONENT_SET"]);
     const usedWebIndices = new Set<number>();
