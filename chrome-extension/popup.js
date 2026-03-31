@@ -1,4 +1,5 @@
 const runBtn = document.getElementById("run");
+const viewportSel = document.getElementById("viewport");
 const statusEl = document.getElementById("status");
 const msgEl = document.getElementById("msg");
 const errEl = document.getElementById("err");
@@ -27,7 +28,8 @@ runBtn.addEventListener("click", async () => {
   setMsg("");
   setStatus("Extracting…");
   try {
-    const resp = await chrome.runtime.sendMessage({ type: "extract_upload_open" });
+    const viewport = viewportSel.value || undefined;
+    const resp = await chrome.runtime.sendMessage({ type: "extract_upload_open", viewport });
     if (!resp?.ok) throw new Error(resp?.error || "Unknown error");
     setStatus("Done");
     setMsg(`webDataId: ${resp.webDataId}`);

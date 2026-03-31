@@ -2,8 +2,9 @@ const originInput = document.getElementById("origin");
 const saveBtn = document.getElementById("save");
 const savedEl = document.getElementById("saved");
 
-const DEFAULT_ORIGIN = "https://m-zero-production.up.railway.app";
+const DEFAULT_ORIGIN = "https://design-qa-agent.vercel.app";
 const LEGACY_DEFAULT_ORIGINS = [
+  "https://m-zero-production.up.railway.app",
   "http://127.0.0.1:3023",
   "http://127.0.0.1:3024",
   "http://127.0.0.1:3025",

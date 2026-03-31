@@ -2,7 +2,7 @@ import type { Metadata } from "next";
 import "./globals.css";
 
 export const metadata: Metadata = {
-  title: "M. zero",
+  title: "M·ZER0",
   description: "Design-to-Code QA automation (Figma ↔ Web CSS)",
 };
 

@@ -2,7 +2,7 @@ import { NextResponse } from "next/server";
 import { z } from "zod";
 import { assertPersonalAccessToken, extractFigmaTokensFromNode, normalizeNodeId, parseFigmaDevModeUrl } from "@/lib/figma";
 import { compareTokenToComputed, type CompareConfig, type CompareRow } from "@/lib/compare";
-import { getWebData } from "@/lib/webDataStore";
+import { getWebDataAsync } from "@/lib/webDataStore";
 import { cookies } from "next/headers";
 import { getSession, getSessionCookieName } from "@/lib/sessionStore";
 
@@ -20,11 +20,13 @@ const BodySchema = z.object({
   nodeClassMapping: z.record(z.string(), z.string()).optional(),
 });
 
+type MatchMethod = "mapping" | "name-exact" | "name-normalized" | "iou" | "text" | null;
+
 type RunResult = {
   className: string;
   selector: string;
   matchedWebClassName?: string | null;
-  severity: "pass" | "fail";
+  severity: "pass" | "warn" | "fail";
   /** strict = COMPONENT/INSTANCE, foundational = FRAME/GROUP 등 일반 레이어 */
   compareMode: "strict" | "foundational";
   diffs: Array<{
@@ -37,6 +39,8 @@ type RunResult = {
   bbox?: { x: number; y: number; width: number; height: number } | null;
   textBbox?: { x: number; y: number; width: number; height: number } | null;
   fixedPosition?: "top" | "bottom" | null;
+  matchMethod: MatchMethod;
+  matchScore: number | null;
   elementFound: boolean;
 };
 
@@ -49,48 +53,25 @@ function canonicalClassKey(input: string) {
 
 function findBestWebEntry(
   webElements: Record<string, { bbox: any; classList: string[]; computed: Record<string, string>; textBbox?: any }>,
-  webByCanonical: Map<string, { bbox: any; classList: string[]; computed: Record<string, string>; textBbox?: any }>,
+  webByCanonicalWithName: Map<string, { entry: { bbox: any; classList: string[]; computed: Record<string, string>; textBbox?: any }; originalName: string }>,
   figmaClassName: string
-): { entry: (typeof webElements)[string] | null; matchedWebClassName: string | null } {
+): { entry: (typeof webElements)[string] | null; matchedWebClassName: string | null; isExact: boolean } {
   const direct = webElements[figmaClassName];
-  if (direct) return { entry: direct, matchedWebClassName: figmaClassName };
+  if (direct) return { entry: direct, matchedWebClassName: figmaClassName, isExact: true };
 
   const key = canonicalClassKey(figmaClassName);
-  const exact = key ? webByCanonical.get(key) : null;
-  if (exact) {
-    // Try to pick a representative class name for debugging
-    const matchedName = Object.keys(webElements).find((k) => canonicalClassKey(k) === key) ?? null;
-    return { entry: exact, matchedWebClassName: matchedName };
+  const canonical = key ? webByCanonicalWithName.get(key) : null;
+  if (canonical) {
+    return { entry: canonical.entry, matchedWebClassName: canonical.originalName, isExact: false };
   }
 
-  // Fuzzy: containment match on canonical keys.
-  // 길이 유사도 < 0.6이면 제외 — "group1000006401" vs "group" (0.36) 같은 오매칭 방지
-  if (!key) return { entry: null, matchedWebClassName: null };
-
-  let best: { score: number; webKey: string; entry: (typeof webElements)[string] } | null = null;
-  for (const [webKey, entry] of Object.entries(webElements)) {
-    const wk = canonicalClassKey(webKey);
-    if (!wk) continue;
-    const contains = wk.includes(key) || key.includes(wk);
-    if (!contains) continue;
-    // 길이 유사도 필터: 짧은 쪽 / 긴 쪽 >= 0.6 이어야 매칭 허용
-    const ratio = Math.min(key.length, wk.length) / Math.max(key.length, wk.length);
-    if (ratio < 0.6) continue;
-    // Score: smaller length delta is better; prefer web key that contains fig key.
-    const lenDelta = Math.abs(wk.length - key.length);
-    const bias = wk.includes(key) ? 0 : 2; // prefer wk contains key
-    const score = lenDelta + bias;
-    if (!best || score < best.score) best = { score, webKey, entry };
-  }
-
-  if (best) return { entry: best.entry, matchedWebClassName: best.webKey };
-  return { entry: null, matchedWebClassName: null };
+  return { entry: null, matchedWebClassName: null, isExact: false };
 }
 
 export async function POST(req: Request) {
   try {
     const body = BodySchema.parse(await req.json());
-    const web = getWebData(body.webDataId);
+    const web = await getWebDataAsync(body.webDataId);
     if (!web) {
       return NextResponse.json({ ok: false, error: "webDataId를 찾지 못했습니다. 스크립트를 다시 실행해주세요." }, { status: 404 });
     }
@@ -110,7 +91,7 @@ export async function POST(req: Request) {
     const sess = getSession(sid);
     const oauthToken = sess?.figma?.accessToken;
 
-    const token = body.figma.personalAccessToken ?? oauthToken ?? process.env.FIGMA_TOKEN;
+    const token = process.env.FIGMA_TOKEN ?? oauthToken ?? body.figma.personalAccessToken;
     if (!token) {
       return NextResponse.json(
         { ok: false, error: "Figma Personal Access Token이 없습니다. 입력하거나 서버 환경변수 FIGMA_TOKEN을 설정해주세요." },
@@ -124,7 +105,7 @@ export async function POST(req: Request) {
       personalAccessToken: token,
       fileKey,
       nodeId,
-      maxTokens: 600,
+      maxTokens: 1500,
     });
 
     // compareMode는 토큰별로 결정 (compareConfig는 thresholdPx만 공유)
@@ -142,48 +123,49 @@ export async function POST(req: Request) {
     const rootFigmaX = rootFigmaBbox?.x ?? 0;
     const rootFigmaY = rootFigmaBbox?.y ?? 0;
 
-    const IOU_THRESHOLD = 0.25; // 이 이상이면 위치 매칭 성공으로 판정
-
-    // Build a relaxed lookup index for web elements.
-    const webByCanonical = new Map<string, (typeof web)["elements"][string]>();
-    for (const [cls, entry] of Object.entries(web.elements)) {
-      const key = canonicalClassKey(cls);
-      if (!key) continue;
-      if (!webByCanonical.has(key)) webByCanonical.set(key, entry);
-    }
-
-    const mapping = body.nodeClassMapping ?? {};
+    const IOU_THRESHOLD = 0.80;
 
     const STRICT_NODE_TYPES = new Set(["COMPONENT", "INSTANCE", "COMPONENT_SET"]);
+    const usedWebIndices = new Set<number>();
 
     const results: RunResult[] = [];
     for (const t of tokens) {
       const className = t.className;
-      // COMPONENT/INSTANCE 자체이거나 그 계층 안에 있는 노드 → strict (모든 속성 비교)
-      // 그 외 일반 FRAME/GROUP → foundational (Foundation 값만 비교)
+
+      // ── 자동 생성 이름 필터 ──
+      if (isAutoGeneratedName(className) && !STRICT_NODE_TYPES.has(t.nodeType) && !t.insideComponent && !t.characters) {
+        continue;
+      }
+
       const compareMode: "strict" | "foundational" =
         STRICT_NODE_TYPES.has(t.nodeType) || t.insideComponent ? "strict" : "foundational";
       const compareConfig: CompareConfig = { thresholdPx: baseThreshold, compareMode };
 
-      // 매핑 테이블 우선 적용: 매핑된 노드는 지정 CSS 클래스로 직접 비교
-      const mappedClass = mapping[className];
-      if (mappedClass) {
-        const selector = `.${cssEscape(mappedClass)}`;
-        const entry = web.elements[mappedClass];
-        if (!entry) {
-          const out = compareTokenToComputed(t, null, compareConfig);
-          results.push({ className, selector, matchedWebClassName: null, severity: "fail", compareMode, diffs: out.diffs, rows: out.rows, bbox: null, textBbox: null, fixedPosition: null, elementFound: false });
-        } else {
-          const out = compareTokenToComputed(t, { classList: entry.classList, computed: entry.computed }, compareConfig);
-          const fp = entry.computed?.['_fixedPosition'];
-          results.push({ className, selector, matchedWebClassName: mappedClass, severity: out.severity, compareMode, diffs: out.diffs, rows: out.rows, bbox: entry.bbox ?? null, textBbox: entry.textBbox ?? null, fixedPosition: (fp === "top" || fp === "bottom") ? fp : null, elementFound: true });
-        }
+      // ── 1순위: 이름 exact match ──
+      const selector = `.${cssEscape(className)}`;
+      const directEntry = web.elements[className];
+      if (directEntry) {
+        const out = compareTokenToComputed(t, { classList: directEntry.classList, computed: directEntry.computed }, compareConfig);
+        const fp = directEntry.computed?.['_fixedPosition'];
+        results.push({
+          className, selector,
+          matchedWebClassName: className,
+          severity: out.severity, compareMode,
+          matchMethod: "name-exact",
+          matchScore: 1.0,
+          diffs: out.diffs, rows: out.rows,
+          bbox: directEntry.bbox ?? null,
+          textBbox: directEntry.textBbox ?? null,
+          fixedPosition: (fp === "top" || fp === "bottom") ? fp : null,
+          elementFound: true,
+        });
         continue;
       }
 
-      // IoU 위치 기반 매칭 시도
-      const selector = `.${cssEscape(className)}`;
+      // ── 2순위: IoU 위치 매칭 (0.80 — 높은 정확도만) ──
       let iouEntry: typeof uniqueWebElems[number] | null = null;
+      let iouEntryIndex = -1;
+      let bestIou = IOU_THRESHOLD;
       if (t.figmaBbox) {
         const scaledFigmaBbox: BboxRect = {
           x: (t.figmaBbox.x - rootFigmaX) * figmaToWebScale,
@@ -191,24 +173,24 @@ export async function POST(req: Request) {
           width: t.figmaBbox.width * figmaToWebScale,
           height: t.figmaBbox.height * figmaToWebScale,
         };
-        let bestIou = IOU_THRESHOLD;
-        for (const candidate of uniqueWebElems) {
-          const score = bboxIou(scaledFigmaBbox, candidate.bbox);
-          if (score > bestIou) { bestIou = score; iouEntry = candidate; }
+        for (let ci = 0; ci < uniqueWebElems.length; ci++) {
+          if (usedWebIndices.has(ci)) continue;
+          const score = bboxIou(scaledFigmaBbox, uniqueWebElems[ci].bbox);
+          if (score > bestIou) { bestIou = score; iouEntry = uniqueWebElems[ci]; iouEntryIndex = ci; }
         }
       }
-
-      if (iouEntry) {
+      if (iouEntry && iouEntryIndex >= 0) {
+        usedWebIndices.add(iouEntryIndex);
         const out = compareTokenToComputed(t, { classList: iouEntry.classList, computed: iouEntry.computed }, compareConfig);
         const iouFp = iouEntry.computed?.['_fixedPosition'];
         results.push({
           className,
           selector: `.${cssEscape(iouEntry.representativeClass)}`,
           matchedWebClassName: iouEntry.representativeClass,
-          severity: out.severity,
-          compareMode,
-          diffs: out.diffs,
-          rows: out.rows,
+          severity: out.severity, compareMode,
+          matchMethod: "iou",
+          matchScore: bestIou,
+          diffs: out.diffs, rows: out.rows,
           bbox: iouEntry.bbox,
           textBbox: iouEntry.textBbox ?? null,
           fixedPosition: (iouFp === "top" || iouFp === "bottom") ? iouFp : null,
@@ -217,28 +199,9 @@ export async function POST(req: Request) {
         continue;
       }
 
-      // IoU 실패 → 이름 기반 폴백
-      const found = findBestWebEntry(web.elements, webByCanonical, className);
-      const entry = found.entry;
-      if (!entry) {
-        const out = compareTokenToComputed(t, null, compareConfig);
-        results.push({ className, selector, matchedWebClassName: null, severity: "fail", compareMode, diffs: out.diffs, rows: out.rows, bbox: null, textBbox: null, fixedPosition: null, elementFound: false });
-        continue;
-      }
-      const out = compareTokenToComputed(t, { classList: entry.classList, computed: entry.computed }, compareConfig);
-      const entryFp = entry.computed?.['_fixedPosition'];
-      results.push({
-        className, selector,
-        matchedWebClassName: found.matchedWebClassName,
-        severity: out.severity,
-        compareMode,
-        diffs: out.diffs,
-        rows: out.rows,
-        bbox: entry.bbox ?? null,
-        textBbox: entry.textBbox ?? null,
-        fixedPosition: (entryFp === "top" || entryFp === "bottom") ? entryFp : null,
-        elementFound: true,
-      });
+      // ── 매칭 실패 → Missing ──
+      const out = compareTokenToComputed(t, null, compareConfig);
+      results.push({ className, selector, matchedWebClassName: null, severity: "fail", compareMode, matchMethod: null, matchScore: null, diffs: out.diffs, rows: out.rows, bbox: null, textBbox: null, fixedPosition: null, elementFound: false });
     }
 
     const summary = summarize(results);
@@ -264,27 +227,59 @@ export async function POST(req: Request) {
 function summarize(results: RunResult[]) {
   let pass = 0, warn = 0, fail = 0, missing = 0;
   let strictFail = 0, foundationalFail = 0;
+  const matchMethods = { mapping: 0, nameExact: 0, nameNormalized: 0, iou: 0, text: 0, missing: 0 };
   for (const r of results) {
-    if (!r.elementFound) missing++;
+    if (!r.elementFound) { missing++; matchMethods.missing++; }
+    else {
+      if (r.matchMethod === "mapping") matchMethods.mapping++;
+      else if (r.matchMethod === "name-exact") matchMethods.nameExact++;
+      else if (r.matchMethod === "name-normalized") matchMethods.nameNormalized++;
+      else if (r.matchMethod === "iou") matchMethods.iou++;
+      else if (r.matchMethod === "text") matchMethods.text++;
+    }
     if (r.severity === "pass") pass++;
+    else if (r.severity === "warn") { warn++; pass++; }
     else {
       fail++;
       if (r.compareMode === "strict") strictFail++;
       else foundationalFail++;
     }
   }
-  return { total: results.length, pass, warn, fail, missing, strictFail, foundationalFail };
+  return { total: results.length, pass, warn, fail, missing, strictFail, foundationalFail, matchMethods };
 }
 
 type BboxRect = { x: number; y: number; width: number; height: number };
 
+/**
+ * X축 우선 IoU: X겹침 50% 이상 + 너비 유사도 ±40% 필수
+ * Y축은 더미 데이터로 밀릴 수 있으므로 관대하게 처리
+ */
 function bboxIou(a: BboxRect, b: BboxRect): number {
-  const x1 = Math.max(a.x, b.x);
+  // X축 겹침 계산
+  const xOverlapStart = Math.max(a.x, b.x);
+  const xOverlapEnd = Math.min(a.x + a.width, b.x + b.width);
+  const xOverlap = Math.max(0, xOverlapEnd - xOverlapStart);
+  const minWidth = Math.min(a.width, b.width);
+
+  // X축 겹침이 작은 쪽 너비의 50% 미만이면 매칭 불가
+  if (minWidth <= 0 || xOverlap / minWidth < 0.5) return 0;
+
+  // 너비 유사도: ±40% 이내
+  const widthRatio = Math.min(a.width, b.width) / Math.max(a.width, b.width);
+  if (widthRatio < 0.6) return 0;
+
+  // 높이 유사도: ±60% 이내 (Y 밀림 허용하되, 크기는 비슷해야 함)
+  const heightRatio = Math.min(a.height, b.height) / Math.max(a.height, b.height);
+  if (heightRatio < 0.4) return 0;
+
+  // 기본 IoU 계산
   const y1 = Math.max(a.y, b.y);
-  const x2 = Math.min(a.x + a.width, b.x + b.width);
   const y2 = Math.min(a.y + a.height, b.y + b.height);
-  if (x2 <= x1 || y2 <= y1) return 0;
-  const inter = (x2 - x1) * (y2 - y1);
+  if (y2 <= y1) {
+    // Y축 겹침 없음 — X/크기가 맞으면 낮은 점수 부여 (Y밀림 허용)
+    return widthRatio * heightRatio * 0.3;
+  }
+  const inter = xOverlap * (y2 - y1);
   const aArea = a.width * a.height;
   const bArea = b.width * b.height;
   const union = aArea + bArea - inter;
@@ -296,6 +291,7 @@ function buildUniqueWebElements(elements: Record<string, { bbox: { x: number; y:
   const groups = new Map<string, {
     bbox: BboxRect;
     classList: string[];
+    classSet: Set<string>;
     computeds: Record<string, string>[];
     representativeClass: string;
     textBbox: BboxRect | null;
@@ -308,6 +304,7 @@ function buildUniqueWebElements(elements: Record<string, { bbox: { x: number; y:
       groups.set(key, {
         bbox: entry.bbox as BboxRect,
         classList: [...entry.classList],
+        classSet: new Set(entry.classList),
         computeds: [entry.computed],
         representativeClass: cls,
         textBbox: (entry.textBbox as BboxRect | null) ?? null,
@@ -315,7 +312,7 @@ function buildUniqueWebElements(elements: Record<string, { bbox: { x: number; y:
     } else {
       const g = groups.get(key)!;
       for (const c of entry.classList) {
-        if (!g.classList.includes(c)) g.classList.push(c);
+        if (!g.classSet.has(c)) { g.classSet.add(c); g.classList.push(c); }
       }
       g.computeds.push(entry.computed);
     }
@@ -343,6 +340,12 @@ function mergeComputedStyles(computeds: Record<string, string>[]): Record<string
     }
   }
   return merged;
+}
+
+
+/** Figma 자동 생성 이름 판별 (Frame 12345, Group 3, Rectangle, Vector, Ellipse 등) */
+function isAutoGeneratedName(name: string): boolean {
+  return /^(Frame|Group|Rectangle|Vector|Ellipse|Line|Polygon|Star|Boolean|Union|Subtract|Intersect|Exclude)\s*\d*$/i.test(name.trim());
 }
 
 function cssEscape(s: string) {

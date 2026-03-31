@@ -3,7 +3,7 @@
   <head>
     <meta charset="utf-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1" />
-    <title>M. zero</title>
+    <title>M·ZER0</title>
     <style>
       body {
         margin: 0;
@@ -67,8 +67,33 @@
   </head>
   <body>
     <div class="wrap">
-      <div class="title">M. zero</div>
+      <div class="title">M·ZER0</div>
       <div class="muted">현재 탭에서 computed style을 추출해 앱으로 업로드 후 결과 페이지를 엽니다.</div>
+      <select id="viewport" style="
+        width: 100%;
+        padding: 8px 10px;
+        border-radius: 8px;
+        border: 1px solid rgba(255,255,255,0.15);
+        background: rgba(255,255,255,0.08);
+        color: rgba(255,255,255,0.92);
+        font-size: 13px;
+        outline: none;
+      ">
+        <option value="">As-is (현재 크기)</option>
+        <optgroup label="Mobile — Small">
+          <option value="320">320px · iPhone SE</option>
+          <option value="375">375px · iPhone 6~8 / SE2~3</option>
+        </optgroup>
+        <optgroup label="Mobile — Medium">
+          <option value="390">390px · iPhone 14/15/16 Pro</option>
+          <option value="430">430px · iPhone Pro Max</option>
+        </optgroup>
+        <optgroup label="Tablet / Desktop">
+          <option value="768">768px · iPad mini</option>
+          <option value="1024">1024px · iPad / iPad Air</option>
+          <option value="1440">1440px · Desktop</option>
+        </optgroup>
+      </select>
       <button id="run" class="btn">Extract & Upload</button>
       <div id="status" class="muted"></div>
       <div id="msg" class="mono"></div>

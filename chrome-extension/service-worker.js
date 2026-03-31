@@ -1,4 +1,4 @@
-const DEFAULT_ORIGIN = "https://m-zero-production.up.railway.app";
+const DEFAULT_ORIGIN = "https://design-qa-agent.vercel.app";
 
 const PICK_KEYS = [
   "width","height",
@@ -13,6 +13,8 @@ const PICK_KEYS = [
   "borderLeftWidth","borderLeftColor","borderLeftStyle",
   "outlineWidth","outlineColor","outlineStyle",
   "boxShadow",
+  // Design QA: 눈에 보이는 속성만
+  "textAlign",
 ];
 
 // ── 앱 origin ──────────────────────────────────────────────────────────────
@@ -22,22 +24,57 @@ async function getOrigin() {
   catch { return DEFAULT_ORIGIN; }
 }
 
+// ── 뷰포트 프리셋 ────────────────────────────────────────────────────────
+const VIEWPORT_PRESETS = {
+  "320":  { width: 320, height: 568 },
+  "375":  { width: 375, height: 812 },
+  "390":  { width: 390, height: 844 },
+  "430":  { width: 430, height: 932 },
+  "768":  { width: 768, height: 1024 },
+  "1024": { width: 1024, height: 768 },
+  "1440": { width: 1440, height: 900 },
+};
+
 // ── 메시지 핸들러 ──────────────────────────────────────────────────────────
 chrome.runtime.onMessage.addListener((msg, _sender, sendResponse) => {
   if (msg?.type !== "extract_upload_open") return;
-  run().then(sendResponse).catch((e) => sendResponse({ ok: false, error: String(e) }));
+  run(msg.viewport).then(sendResponse).catch((e) => sendResponse({ ok: false, error: String(e) }));
   return true;
 });
 
 // ══════════════════════════════════════════════════════════════════════════
 //  메인 흐름: 4-phase
 // ══════════════════════════════════════════════════════════════════════════
-async function run() {
+async function run(viewportPreset) {
   const origin = await getOrigin();
   const [tab] = await chrome.tabs.query({ active: true, currentWindow: true });
   if (!tab?.id) throw new Error("No active tab");
   const tabId   = tab.id;
   const windowId = tab.windowId;
+
+  // ── Phase 0: 뷰포트 에뮬레이션 (프리셋 선택 시) ────────────────────────
+  // chrome.windows.update는 macOS 최소 창 크기(~500px) 제한이 있어
+  // DevTools Protocol의 Emulation.setDeviceMetricsOverride를 사용
+  let emulationActive = false;
+  if (viewportPreset && VIEWPORT_PRESETS[viewportPreset]) {
+    const preset = VIEWPORT_PRESETS[viewportPreset];
+    try {
+      await chrome.debugger.attach({ tabId }, "1.3");
+      await chrome.debugger.sendCommand({ tabId }, "Emulation.setDeviceMetricsOverride", {
+        width: preset.width,
+        height: preset.height,
+        deviceScaleFactor: 2,
+        mobile: preset.width < 768,
+      });
+      emulationActive = true;
+      // 반응형 CSS 적용 대기
+      await new Promise((r) => setTimeout(r, 600));
+    } catch (e) {
+      console.warn("[QA] DevTools emulation failed:", e);
+    }
+  }
+
+  try {
 
   // ── Phase 1: CSS 데이터 선추출 (스크롤 없이) ─────────────────────────
   // 스크롤 전 DOM 상태 그대로 className + computedStyle 수집
@@ -59,21 +96,51 @@ async function run() {
   });
   if (!cssData) throw new Error("CSS extraction failed");
 
-  // ── Phase 2: 스크롤 & 캡처 루프 ─────────────────────────────────────
-  // GoFullPage 방식: top → bottom 순차 스크롤, 각 뷰포트 captureVisibleTab
-  let strips = null;
-  let fixedRects = null;
+  // ── Phase 2: Lazy-load 트리거 (스크롤 → 이미지 로드 → 복귀) ──────
+  // SPA에서 스크롤하지 않으면 lazy-load 이미지와 하단 콘텐츠가 로드되지 않음
   try {
-    const loopResult = await captureLoop(tabId, windowId, vpRaw);
-    strips = loopResult?.strips ?? null;
-    fixedRects = loopResult?.fixedRects ?? null;
+    await chrome.scripting.executeScript({
+      target: { tabId },
+      func: () => {
+        const s = document.createElement("style");
+        s.id = "__qa_sb__";
+        s.textContent = "*::-webkit-scrollbar{display:none!important}*{scrollbar-width:none!important}";
+        document.head.appendChild(s);
+      },
+      world: "MAIN",
+    });
+
+    const scrollStep = vpRaw.h;
+    for (let step = 0; step < 30; step++) {
+      await chrome.scripting.executeScript({
+        target: { tabId },
+        func: (y) => window.scrollTo({ top: y, behavior: "instant" }),
+        args: [scrollStep * (step + 1)],
+        world: "MAIN",
+      });
+      await new Promise(r => setTimeout(r, 300));
+      const [{ result: curY }] = await chrome.scripting.executeScript({
+        target: { tabId }, func: () => window.scrollY, world: "MAIN",
+      });
+      const [{ result: scrollH }] = await chrome.scripting.executeScript({
+        target: { tabId },
+        func: () => Math.max(document.documentElement.scrollHeight, document.body.scrollHeight),
+        world: "MAIN",
+      });
+      if (curY + vpRaw.h >= scrollH - 10) break;
+    }
+    await new Promise(r => setTimeout(r, 800));
+    await chrome.scripting.executeScript({
+      target: { tabId },
+      func: () => window.scrollTo({ top: 0, behavior: "instant" }),
+      world: "MAIN",
+    });
+    await new Promise(r => setTimeout(r, 300));
   } catch (e) {
-    console.warn("[QA] captureLoop error:", e);
+    console.warn("[QA] lazy-load scroll failed:", e);
   }
 
   // ── Phase 2.5: 스크롤 완료 후 CSS 재추출 ────────────────────────────
-  // SPA lazy-load: 스크롤 전에는 DOM에 없던 요소들이 이제 존재함
-  // 재추출 결과가 있으면 초기 추출값 대체 (더 많은 요소 포함)
   try {
     const [{ result: cssDataAfterScroll }] = await chrome.scripting.executeScript({
       target: { tabId },
@@ -82,7 +149,6 @@ async function run() {
       world: "MAIN",
     });
     if (cssDataAfterScroll && Object.keys(cssDataAfterScroll.elements ?? {}).length > Object.keys(cssData.elements ?? {}).length) {
-      // 더 많은 요소를 잡은 경우에만 교체 (href, viewport 등은 초기값 유지)
       cssData.elements = cssDataAfterScroll.elements;
       cssData.scrollHeight = cssDataAfterScroll.scrollHeight;
     }
@@ -90,34 +156,109 @@ async function run() {
     console.warn("[QA] post-scroll CSS re-extract failed:", e);
   }
 
-  // ── Phase 3: 캔버스 합성 → 단일 screenshotDataUrl ───────────────────
-  // 페이지 컨텍스트에서 createImageBitmap(Blob) 방식으로 합성
-  // (img-src CSP 우회 + canvas taint 없음)
+  // ── Phase 3: DevTools Protocol로 풀페이지 스크린샷 ──────────────────
   let screenshotDataUrl = null;
-  if (strips && strips.length >= 1) {
-    screenshotDataUrl = await stitchInPage(tabId, strips, vpRaw, fixedRects);
+  const actualScrollHeight = cssData.scrollHeight ?? vpRaw.h;
+
+  // debugger가 이미 attach되어 있으면 사용, 아니면 새로 attach
+  let debuggerWasAttached = emulationActive;
+  if (!debuggerWasAttached) {
+    try {
+      await chrome.debugger.attach({ tabId }, "1.3");
+      debuggerWasAttached = true;
+    } catch (e) {
+      console.warn("[QA] debugger attach for screenshot failed:", e);
+    }
   }
-  // 합성 실패 → 단일 뷰포트 폴백
+
+  if (debuggerWasAttached) {
+    try {
+      // 캡처 전: fixed/sticky 요소를 absolute로 변경 + 페이지 하단에 배치
+      await chrome.scripting.executeScript({
+        target: { tabId },
+        func: () => {
+          const scrollH = Math.max(document.documentElement.scrollHeight, document.body.scrollHeight);
+          document.querySelectorAll("*").forEach(el => {
+            const pos = window.getComputedStyle(el).position;
+            if (pos === "fixed" || pos === "sticky") {
+              const rect = el.getBoundingClientRect();
+              el.dataset.qaOrigPos = pos;
+              el.dataset.qaOrigTop = el.style.top;
+              el.dataset.qaOrigBottom = el.style.bottom;
+              el.dataset.qaOrigLeft = el.style.left;
+              el.style.position = "absolute";
+              // 하단 고정 요소 → 페이지 맨 아래에 배치
+              if (rect.top > window.innerHeight / 2) {
+                el.style.top = (scrollH - rect.height) + "px";
+                el.style.bottom = "auto";
+              }
+              // 상단 고정 요소 → 페이지 맨 위에 유지
+              else {
+                el.style.top = "0px";
+                el.style.bottom = "auto";
+              }
+            }
+          });
+        },
+        world: "MAIN",
+      });
+
+      await new Promise(r => setTimeout(r, 100));
+
+      // 풀페이지 스크린샷 캡처 (PNG — 선명한 텍스트 품질)
+      const captureResult = await chrome.debugger.sendCommand({ tabId }, "Page.captureScreenshot", {
+        format: "png",
+        captureBeyondViewport: true,
+        clip: {
+          x: 0, y: 0,
+          width: vpRaw.w,
+          height: Math.min(actualScrollHeight, 16384),
+          scale: 1,
+        },
+      });
+      if (captureResult?.data) {
+        screenshotDataUrl = "data:image/png;base64," + captureResult.data;
+      }
+
+      // 캡처 후: fixed/sticky 요소 복원
+      await chrome.scripting.executeScript({
+        target: { tabId },
+        func: () => {
+          document.querySelectorAll("[data-qa-orig-pos]").forEach(el => {
+            el.style.position = el.dataset.qaOrigPos || "";
+            el.style.top = el.dataset.qaOrigTop || "";
+            el.style.bottom = el.dataset.qaOrigBottom || "";
+            delete el.dataset.qaOrigPos;
+            delete el.dataset.qaOrigTop;
+            delete el.dataset.qaOrigBottom;
+            delete el.dataset.qaOrigLeft;
+          });
+          // 스크롤바 숨김 스타일 제거
+          document.getElementById('__qa_sb__')?.remove();
+        },
+        world: "MAIN",
+      });
+    } catch (e) {
+      console.warn("[QA] DevTools screenshot failed, falling back:", e);
+    }
+  }
+
+  // 폴백: 단일 뷰포트 캡처
   if (!screenshotDataUrl) {
     try {
       screenshotDataUrl = await Promise.race([
-        chrome.tabs.captureVisibleTab(windowId, { format: "jpeg", quality: 85 }),
+        chrome.tabs.captureVisibleTab(windowId, { format: "png", quality: 95 }),
         sleep(4000).then(() => null),
       ]);
     } catch { screenshotDataUrl = null; }
   }
 
-  // 실제 페이지 높이 = 마지막 스트립 scrollY + 뷰포트 높이
-  const actualScrollHeight = strips && strips.length > 0
-    ? strips[strips.length - 1].scrollY + vpRaw.h
-    : cssData.scrollHeight ?? vpRaw.h;
-
-  // ── Phase 4: 일괄 업로드 ─────────────────────────────────────────────
+  // ── Phase 4: 분리 업로드 (CSS→Vercel, 스크린샷→Supabase 직접) ──────
+  // CSS 데이터만 Vercel API로 업로드 (스크린샷 제외 — 4MB 제한 우회)
   const payload = {
     ...cssData,
     scrollHeight: Math.round(actualScrollHeight),
-    // screenshotDataUrl: null이면 필드 자체를 제외 (Zod .optional() 대응)
-    ...(screenshotDataUrl ? { screenshotDataUrl } : {}),
+    // screenshotDataUrl은 Supabase에 직접 업로드하므로 API에 보내지 않음
   };
 
   const res = await fetch(`${origin}/api/web-data`, {
@@ -131,8 +272,56 @@ async function run() {
     throw new Error(`Upload failed: ${res.status} — ${serverErr}`);
   }
 
+  // 스크린샷을 Supabase Storage에 직접 업로드 (크기 제한 없음)
+  if (screenshotDataUrl) {
+    try {
+      const SUPABASE_URL = "https://dgiycxfwitsthgauenxx.supabase.co";
+      const SUPABASE_KEY = "sb_publishable_Vezr8YirqMBSDcoSIn5efA_BA77X5b3";
+      const match = screenshotDataUrl.match(/^data:([^;]+);base64,(.+)$/s);
+      if (match) {
+        const mimeType = match[1];
+        const ext = mimeType.includes("png") ? "png" : "jpg";
+        // base64 → binary array
+        const binaryStr = atob(match[2]);
+        const bytes = new Uint8Array(binaryStr.length);
+        for (let i = 0; i < binaryStr.length; i++) bytes[i] = binaryStr.charCodeAt(i);
+        
+        const uploadRes = await fetch(
+          `${SUPABASE_URL}/storage/v1/object/web-data/${json.webDataId}/screenshot.${ext}`,
+          {
+            method: "POST",
+            headers: {
+              "Authorization": `Bearer ${SUPABASE_KEY}`,
+              "apikey": SUPABASE_KEY,
+              "Content-Type": mimeType,
+              "x-upsert": "true",
+            },
+            body: bytes,
+          }
+        );
+        if (!uploadRes.ok) {
+          console.warn("[QA] Supabase screenshot upload failed:", uploadRes.status);
+        }
+      }
+    } catch (e) {
+      console.warn("[QA] Supabase screenshot upload error:", e);
+    }
+  }
+
   await chrome.tabs.create({ url: `${origin}/?webDataId=${encodeURIComponent(json.webDataId)}` });
   return { ok: true, webDataId: json.webDataId };
+
+  } finally {
+    // ── debugger 정리 (에뮬레이션 해제 + detach) ─────────────────────────
+    if (emulationActive || debuggerWasAttached) {
+      try {
+        if (emulationActive) {
+          await chrome.debugger.sendCommand({ tabId }, "Emulation.clearDeviceMetricsOverride", {});
+        }
+        await chrome.debugger.detach({ tabId });
+      } catch { /* tab may have closed */ }
+    }
+  }
 }
 
 // ══════════════════════════════════════════════════════════════════════════
@@ -354,7 +543,7 @@ async function captureLoop(tabId, windowId, { w, h, dpr }) {
     for (let attempt = 0; attempt < 2; attempt++) {
       try {
         const url = await Promise.race([
-          chrome.tabs.captureVisibleTab(windowId, { format: "jpeg", quality: 80 }),
+          chrome.tabs.captureVisibleTab(windowId, { format: "png", quality: 95 }),
           sleep(5000).then(() => { throw new Error("capture timeout"); }),
         ]);
         return url;
@@ -523,7 +712,7 @@ async function stitchInPage(tabId, strips, { w, h, dpr }, fixedRects) {
 //  Phase 1: CSS 추출 함수 (페이지 컨텍스트에서 실행)
 // ══════════════════════════════════════════════════════════════════════════
 function fastExtract(pickKeys) {
-  const MAX = 1500; // 풀페이지 대응 (기존 600 → 1500, 하단 뷰포트 요소 누락 방지)
+  const MAX = 4000; // 풀페이지 대응 (기존 1500 → 4000, 복잡한 페이지 하단 요소 누락 방지)
   const TRANSPARENT = "rgba(0, 0, 0, 0)";
   const scrollY = window.scrollY;
   const elements = {};

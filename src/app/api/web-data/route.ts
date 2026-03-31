@@ -51,7 +51,7 @@ export async function POST(req: Request) {
     // req.text() 로 스트림 직접 읽기 (req.json() 내부 버퍼 제한 우회)
     const text = await req.text();
     const body = BodySchema.parse(JSON.parse(text));
-    const id = putWebData(body);
+    const id = await putWebData(body);
     return NextResponse.json({ ok: true, webDataId: id }, { headers: corsHeaders });
   } catch (e) {
     console.error("[web-data POST] error:", e);

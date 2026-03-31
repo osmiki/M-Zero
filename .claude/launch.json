@@ -2,10 +2,11 @@
   "version": "0.0.1",
   "configurations": [
     {
-      "name": "design-qa",
-      "runtimeExecutable": "npm",
-      "runtimeArgs": ["run", "dev"],
-      "port": 3022
+      "name": "design-qa-agent",
+      "runtimeExecutable": "node",
+      "runtimeArgs": ["/tmp/dqa-app/node_modules/next/dist/bin/next", "dev", "-p", "3022"],
+      "port": 3022,
+      "autoPort": false
     }
   ]
 }

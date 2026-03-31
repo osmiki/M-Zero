@@ -1,6 +1,6 @@
 {
   "manifest_version": 3,
-  "name": "M. zero",
+  "name": "M·ZER0",
   "version": "0.5.7",
   "description": "Extract computed CSS from current page and upload to Design QA Agent.",
   "action": {
@@ -8,7 +8,7 @@
     "default_popup": "popup.html"
   },
   "options_page": "options.html",
-  "permissions": ["activeTab", "scripting", "storage", "tabs"],
+  "permissions": ["activeTab", "scripting", "storage", "tabs", "debugger"],
   "host_permissions": ["<all_urls>", "http://127.0.0.1/*", "http://localhost/*"],
   "background": {
     "service_worker": "service-worker.js",
