@@ -131,7 +131,7 @@ export async function POST(req: Request) {
     const rootFigmaX = rootFigmaBbox?.x ?? 0;
     const rootFigmaY = rootFigmaBbox?.y ?? 0;
 
-    const IOU_THRESHOLD = 0.55;
+    const IOU_THRESHOLD = 0.65;
 
     const STRICT_NODE_TYPES = new Set(["COMPONENT", "INSTANCE", "COMPONENT_SET"]);
     const usedWebIndices = new Set<number>();
@@ -149,8 +149,31 @@ export async function POST(req: Request) {
         STRICT_NODE_TYPES.has(t.nodeType) || t.insideComponent ? "strict" : "foundational";
       const compareConfig: CompareConfig = { thresholdPx: baseThreshold, compareMode };
 
-      // ── 1순위: 이름 exact match ──
+      // ── 0순위: 수동 노드-클래스 매핑 ──
       const selector = `.${cssEscape(className)}`;
+      const mappedClass = body.nodeClassMapping?.[className];
+      if (mappedClass) {
+        const mappedEntry = web.elements[mappedClass];
+        if (mappedEntry) {
+          const out = compareTokenToComputed(t, { classList: mappedEntry.classList, computed: mappedEntry.computed }, compareConfig);
+          const fp = mappedEntry.computed?.['_fixedPosition'];
+          results.push({
+            className, selector: `.${cssEscape(mappedClass)}`,
+            matchedWebClassName: mappedClass,
+            severity: out.severity, compareMode,
+            matchMethod: "mapping",
+            matchScore: 1.0,
+            diffs: out.diffs, rows: out.rows,
+            bbox: mappedEntry.bbox ?? null,
+            textBbox: mappedEntry.textBbox ?? null,
+            fixedPosition: (fp === "top" || fp === "bottom") ? fp : null,
+            elementFound: true,
+          });
+          continue;
+        }
+      }
+
+      // ── 1순위: 이름 exact match ──
       const directEntry = web.elements[className];
       if (directEntry) {
         const out = compareTokenToComputed(t, { classList: directEntry.classList, computed: directEntry.computed }, compareConfig);

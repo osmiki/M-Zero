@@ -25,6 +25,7 @@ export default function HomePage() {
   const [screenshotErr, setScreenshotErr] = useState<string | null>(null);
   const [showAll, setShowAll] = useState(true);
   const [serverTokenConfigured, setServerTokenConfigured] = useState(false);
+  const [nodeClassMappingRaw, setNodeClassMappingRaw] = useState("");
 
   // Annotations
   const figmaFileKey = resp && resp.ok ? resp.meta.figma.fileKey : null;

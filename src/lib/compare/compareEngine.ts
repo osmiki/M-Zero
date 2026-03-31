@@ -63,16 +63,17 @@ export function compareTokenToComputed(
   pushPxInfo(rows, "height", fig.height, parseCssPx(web.height));
 
   // ─────────────────────────────────────────────────────────
-  // Spacing (Padding / Gap)
-  // Figma에 명시된 값이 있으면 항상 비교 (null 가드는 pushPx/pushPaddingOrMargin 내부에 존재)
+  // Spacing (Padding / Gap) — strict 모드(COMPONENT/INSTANCE)만 비교
   // ─────────────────────────────────────────────────────────
-  if (fig.padding) {
-    pushPaddingOrMargin(rows, diffs, "paddingTop",    fig.padding.top,    parseCssPx(web.paddingTop),    parseCssPx(web.marginTop),    cfg.thresholdPx);
-    pushPaddingOrMargin(rows, diffs, "paddingRight",  fig.padding.right,  parseCssPx(web.paddingRight),  parseCssPx(web.marginRight),  cfg.thresholdPx);
-    pushPaddingOrMargin(rows, diffs, "paddingBottom", fig.padding.bottom, parseCssPx(web.paddingBottom), parseCssPx(web.marginBottom), cfg.thresholdPx);
-    pushPaddingOrMargin(rows, diffs, "paddingLeft",   fig.padding.left,   parseCssPx(web.paddingLeft),   parseCssPx(web.marginLeft),   cfg.thresholdPx);
+  if (!isFoundational) {
+    if (fig.padding) {
+      pushPaddingOrMargin(rows, diffs, "paddingTop",    fig.padding.top,    parseCssPx(web.paddingTop),    parseCssPx(web.marginTop),    cfg.thresholdPx);
+      pushPaddingOrMargin(rows, diffs, "paddingRight",  fig.padding.right,  parseCssPx(web.paddingRight),  parseCssPx(web.marginRight),  cfg.thresholdPx);
+      pushPaddingOrMargin(rows, diffs, "paddingBottom", fig.padding.bottom, parseCssPx(web.paddingBottom), parseCssPx(web.marginBottom), cfg.thresholdPx);
+      pushPaddingOrMargin(rows, diffs, "paddingLeft",   fig.padding.left,   parseCssPx(web.paddingLeft),   parseCssPx(web.marginLeft),   cfg.thresholdPx);
+    }
+    pushPx(rows, diffs, "gap", fig.itemSpacing, parseCssPx(web.gap), cfg.thresholdPx);
   }
-  pushPx(rows, diffs, "gap", fig.itemSpacing, parseCssPx(web.gap), cfg.thresholdPx);
   // display/flexDirection/alignItems/justifyContent → 구현 방법이므로 Design QA에서 제외
 
   // ── textAlign (항상 비교 — 눈에 보이는 결과) ──
