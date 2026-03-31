@@ -114,6 +114,14 @@ export async function POST(req: Request) {
     // IoU 매칭용 unique 웹 요소 목록 (bbox 기반 중복 제거)
     const uniqueWebElems = buildUniqueWebElements(web.elements);
 
+    // 정규화 이름 매칭용 맵: canonicalKey → { entry, originalName }
+    // Product-List-Grid → productlistgrid → product-list-grid 등과 매칭
+    const webByCanonical = new Map<string, { entry: (typeof web.elements)[string]; originalName: string }>();
+    for (const [cls, entry] of Object.entries(web.elements)) {
+      const key = canonicalClassKey(cls);
+      if (key && !webByCanonical.has(key)) webByCanonical.set(key, { entry, originalName: cls });
+    }
+
     // Figma 루트 프레임 bbox (tokens[0]이 root)
     const rootFigmaBbox = tokens[0]?.figmaBbox ?? null;
     // 스케일: Figma 프레임 너비 → 웹 뷰포트 너비
@@ -162,7 +170,28 @@ export async function POST(req: Request) {
         continue;
       }
 
-      // ── 2순위: IoU 위치 매칭 (0.80 — 높은 정확도만) ──
+      // ── 2순위: 정규화 이름 매칭 (Product-List-Grid ↔ product-list-grid 등) ──
+      const canonicalKey = canonicalClassKey(className);
+      const normalizedEntry = canonicalKey ? webByCanonical.get(canonicalKey) : null;
+      if (normalizedEntry) {
+        const out = compareTokenToComputed(t, { classList: normalizedEntry.entry.classList, computed: normalizedEntry.entry.computed }, compareConfig);
+        const fp = normalizedEntry.entry.computed?.['_fixedPosition'];
+        results.push({
+          className, selector: `.${cssEscape(normalizedEntry.originalName)}`,
+          matchedWebClassName: normalizedEntry.originalName,
+          severity: out.severity, compareMode,
+          matchMethod: "name-normalized",
+          matchScore: 0.9,
+          diffs: out.diffs, rows: out.rows,
+          bbox: normalizedEntry.entry.bbox ?? null,
+          textBbox: normalizedEntry.entry.textBbox ?? null,
+          fixedPosition: (fp === "top" || fp === "bottom") ? fp : null,
+          elementFound: true,
+        });
+        continue;
+      }
+
+      // ── 3순위: IoU 위치 매칭 ──
       let iouEntry: typeof uniqueWebElems[number] | null = null;
       let iouEntryIndex = -1;
       let bestIou = IOU_THRESHOLD;
