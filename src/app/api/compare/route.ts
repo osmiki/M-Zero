@@ -434,8 +434,11 @@ function findFailingChildBboxes(
 
     const area = b.width * b.height;
     const areaRatio = area / parentArea;
-    // 너무 작거나(3% 미만) 너무 큰(65% 이상) 요소 제외
-    if (areaRatio < 0.03 || areaRatio > 0.65) continue;
+    const widthRatio = b.width / parentBbox.width;
+    // full-width 컨테이너 제외 (행 전체를 감싸는 wrapper 등)
+    if (widthRatio > 0.85) continue;
+    // 너무 작거나(0.8% 미만) 너무 큰(65% 이상) 요소 제외
+    if (areaRatio < 0.008 || areaRatio > 0.65) continue;
 
     // 텍스트 요소 판별: font-size가 있어야 함 (kebab-case, camelCase 둘 다 체크)
     const fs = entry.computed?.["font-size"] ?? entry.computed?.["fontSize"] ?? "";
