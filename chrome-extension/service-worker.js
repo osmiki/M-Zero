@@ -930,9 +930,6 @@ function fastExtract(pickKeys) {
     for (const c of cls) {
       if (!elements[c]) { elements[c] = entry; break; }
     }
-    // data-slot 속성도 키로 등록 (Figma 레이어명과 매칭용)
-    const slot = el.dataset?.slot;
-    if (slot && !elements[slot]) elements[slot] = entry;
     count++;
   }
 
