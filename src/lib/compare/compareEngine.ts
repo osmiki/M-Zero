@@ -49,8 +49,10 @@ export function compareTokenToComputed(
         fontFamily:     token.figma.fontFamily      ?? cf.fontFamily,
         lineHeightPx:   token.figma.lineHeightPx    ?? cf.lineHeightPx,
         letterSpacingPx:token.figma.letterSpacingPx ?? cf.letterSpacingPx,
-        strokeWidth:    token.figma.strokeWidth     ?? cf.strokeWidth,
-        strokeColor:    token.figma.strokeColor     ?? cf.strokeColor,
+        // strokeWidth/strokeColor는 루트 컴포넌트에 직접 있을 때만 비교.
+        // childFoundation에서 상속하면 어느 자식 노드인지 추적 불가 → 제외
+        strokeWidth:    token.figma.strokeWidth,
+        strokeColor:    token.figma.strokeColor,
         shadow:         token.figma.shadow          ?? cf.shadow,
       }
     : token.figma;
