@@ -312,34 +312,13 @@ function summarize(results: RunResult[]) {
 
 type BboxRect = { x: number; y: number; width: number; height: number };
 
-/**
- * 표준 IoU: X겹침 50% 이상 + 너비/높이 유사도 필수
- */
 function bboxIou(a: BboxRect, b: BboxRect): number {
-  // X축 겹침 계산
-  const xOverlapStart = Math.max(a.x, b.x);
-  const xOverlapEnd = Math.min(a.x + a.width, b.x + b.width);
-  const xOverlap = Math.max(0, xOverlapEnd - xOverlapStart);
-  const minWidth = Math.min(a.width, b.width);
-
-  // X축 겹침이 작은 쪽 너비의 50% 미만이면 매칭 불가
-  if (minWidth <= 0 || xOverlap / minWidth < 0.5) return 0;
-
-  // 너비 유사도: ±40% 이내
-  const widthRatio = Math.min(a.width, b.width) / Math.max(a.width, b.width);
-  if (widthRatio < 0.6) return 0;
-
-  // 높이 유사도: ±60% 이내
-  const heightRatio = Math.min(a.height, b.height) / Math.max(a.height, b.height);
-  if (heightRatio < 0.4) return 0;
-
-  // 기본 IoU 계산
+  const x1 = Math.max(a.x, b.x);
   const y1 = Math.max(a.y, b.y);
+  const x2 = Math.min(a.x + a.width, b.x + b.width);
   const y2 = Math.min(a.y + a.height, b.y + b.height);
-  if (y2 <= y1) {
-    return 0;
-  }
-  const inter = xOverlap * (y2 - y1);
+  if (x2 <= x1 || y2 <= y1) return 0;
+  const inter = (x2 - x1) * (y2 - y1);
   const aArea = a.width * a.height;
   const bArea = b.width * b.height;
   const union = aArea + bArea - inter;
