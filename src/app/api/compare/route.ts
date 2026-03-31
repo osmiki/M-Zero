@@ -313,9 +313,7 @@ function summarize(results: RunResult[]) {
 type BboxRect = { x: number; y: number; width: number; height: number };
 
 /**
- * X축 우선 IoU: X겹침 50% 이상 + 너비 유사도 ±40% 필수
- * Y축은 더미 데이터로 밀릴 수 있으므로 관대하게 처리.
- * 전체 너비 섹션(widthRatio ≥ 0.85)은 Y 위치 근접도만으로 매칭 허용.
+ * 표준 IoU: X겹침 50% 이상 + 너비/높이 유사도 필수
  */
 function bboxIou(a: BboxRect, b: BboxRect): number {
   // X축 겹침 계산
@@ -331,7 +329,7 @@ function bboxIou(a: BboxRect, b: BboxRect): number {
   const widthRatio = Math.min(a.width, b.width) / Math.max(a.width, b.width);
   if (widthRatio < 0.6) return 0;
 
-  // 높이 유사도: ±60% 이내 (Y 밀림 허용하되, 크기는 비슷해야 함)
+  // 높이 유사도: ±60% 이내
   const heightRatio = Math.min(a.height, b.height) / Math.max(a.height, b.height);
   if (heightRatio < 0.4) return 0;
 
@@ -339,21 +337,7 @@ function bboxIou(a: BboxRect, b: BboxRect): number {
   const y1 = Math.max(a.y, b.y);
   const y2 = Math.min(a.y + a.height, b.y + b.height);
   if (y2 <= y1) {
-    // Y축 겹침 없음 — X/크기가 맞으면 낮은 점수 부여 (Y밀림 허용)
-    // 전체 너비 섹션(widthRatio ≥ 0.85)은 Y 거리가 가까우면 추가 점수
-    const baseScore = widthRatio * heightRatio * 0.3;
-    if (widthRatio >= 0.85) {
-      const yCenterA = a.y + a.height / 2;
-      const yCenterB = b.y + b.height / 2;
-      const maxH = Math.max(a.height, b.height);
-      const yDist = Math.abs(yCenterA - yCenterB);
-      // Y 중심 거리가 최대 높이의 1배 이내면 점수 보정
-      if (yDist < maxH) {
-        const yProximity = 1 - yDist / maxH;
-        return Math.max(baseScore, widthRatio * heightRatio * (0.3 + yProximity * 0.4));
-      }
-    }
-    return baseScore;
+    return 0;
   }
   const inter = xOverlap * (y2 - y1);
   const aArea = a.width * a.height;
