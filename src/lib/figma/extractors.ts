@@ -174,6 +174,64 @@ export async function extractFigmaTokensFromNode(args: {
     }
   }
 
+  // INSTANCE 노드의 componentId 수집 → 같은 파일에 정의된 COMPONENT 배치 조회
+  // 외부 라이브러리 컴포넌트에서 상속받은 색상은 n.styles?.fill이 없어 트리 워크로 못 잡음.
+  // 여기서 COMPONENT 정의를 직접 가져와 TEXT 자식의 스타일→hex 매핑을 보충.
+  {
+    const componentIds = new Set<string>();
+    const idStack: any[] = [nodeWrap.document];
+    while (idStack.length) {
+      const n = idStack.pop();
+      if (!n) continue;
+      if (n.type === "INSTANCE" && n.componentId) componentIds.add(n.componentId);
+      if (Array.isArray(n?.children)) {
+        for (let i = n.children.length - 1; i >= 0; i--) idStack.push(n.children[i]);
+      }
+    }
+
+    if (componentIds.size > 0) {
+      try {
+        const ids = Array.from(componentIds).slice(0, 120).join(",");
+        const compRes = await fetchWithTimeout(
+          `https://api.figma.com/v1/files/${encodeURIComponent(args.fileKey)}/nodes?ids=${encodeURIComponent(ids)}`,
+          { headers: { "X-Figma-Token": args.personalAccessToken }, cache: "no-store" },
+          20_000
+        );
+        if (compRes.ok) {
+          const compJson = await compRes.json();
+          for (const nodeWrapEntry of Object.values(compJson?.nodes ?? {})) {
+            const compDoc = (nodeWrapEntry as any)?.document;
+            if (!compDoc || compDoc.type !== "COMPONENT") continue;
+            const compStylesDict: Record<string, any> = (nodeWrapEntry as any)?.styles ?? {};
+            // COMPONENT 하위 TEXT 노드에서 styles.fill → hex 매핑 추출
+            const textStack: any[] = Array.isArray(compDoc.children) ? [...compDoc.children] : [];
+            while (textStack.length) {
+              const tn = textStack.pop();
+              if (!tn || tn.visible === false) continue;
+              if (tn.type === "TEXT" && tn.styles?.fill) {
+                const styleEntry = compStylesDict[tn.styles.fill];
+                if (styleEntry?.name) {
+                  const parts = styleEntry.name.split("/");
+                  const tokenName = parts[parts.length - 1].trim();
+                  if (tokenName) {
+                    const rawColor = extractSolidFillColor(tn);
+                    if (rawColor) {
+                      const hex = normalizeColorToHex(rawColor);
+                      if (hex && !colorTokenMap.has(hex)) colorTokenMap.set(hex, tokenName);
+                    }
+                  }
+                }
+              }
+              if (Array.isArray(tn?.children)) {
+                for (let i = tn.children.length - 1; i >= 0; i--) textStack.push(tn.children[i]);
+              }
+            }
+          }
+        }
+      } catch { /* 실패 시 스킵 — 토큰명 없이도 동작 */ }
+    }
+  }
+
   const max = typeof args.maxTokens === "number" && args.maxTokens > 0 ? Math.floor(args.maxTokens) : 500;
 
   // Pre-pass: COMPONENT 노드의 stroke + 텍스트 색상 데이터 수집
