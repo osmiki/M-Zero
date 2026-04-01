@@ -15,6 +15,71 @@ const NodeResponseSchema = z.object({
   ),
 });
 
+/**
+ * Figma 파일의 모든 FILL 타입 Named Style을 가져와
+ * hex → tokenName 역방향 맵을 빌드.
+ * 인스턴스 자식 노드처럼 styles.fill 참조가 없어도 hex로 토큰명 조회 가능.
+ */
+async function buildFigmaColorTokenMap(
+  personalAccessToken: string,
+  fileKey: string
+): Promise<Map<string, string>> {
+  const map = new Map<string, string>();
+  try {
+    // Step 1: 파일 내 모든 Named Style 목록 가져오기
+    const stylesRes = await fetchWithTimeout(
+      `https://api.figma.com/v1/files/${encodeURIComponent(fileKey)}/styles`,
+      { headers: { "X-Figma-Token": personalAccessToken }, cache: "no-store" },
+      15_000
+    );
+    if (!stylesRes.ok) return map;
+
+    const stylesJson = await stylesRes.json();
+    const colorStyles: Array<{ node_id: string; name: string }> = (stylesJson?.meta?.styles ?? [])
+      .filter((s: any) => s.style_type === "FILL" && s.node_id);
+    if (colorStyles.length === 0) return map;
+
+    // Step 2: 색상 스타일 노드들을 배치 쿼리하여 실제 hex값 추출
+    // node_id는 "1:23" 형태 → URL 인코딩
+    const nodeIds = colorStyles.map((s) => s.node_id).join(",");
+    const nodesRes = await fetchWithTimeout(
+      `https://api.figma.com/v1/files/${encodeURIComponent(fileKey)}/nodes?ids=${encodeURIComponent(nodeIds)}`,
+      { headers: { "X-Figma-Token": personalAccessToken }, cache: "no-store" },
+      20_000
+    );
+    if (!nodesRes.ok) return map;
+
+    const nodesJson = await nodesRes.json();
+
+    // Step 3: hex → tokenName 맵 빌드
+    for (const style of colorStyles) {
+      // Figma API는 node_id를 "1:23" → "1-23" 키로 반환하기도 함
+      const nodeWrap = nodesJson?.nodes?.[style.node_id]
+        ?? nodesJson?.nodes?.[style.node_id.replace(":", "-")]
+        ?? nodesJson?.nodes?.[style.node_id.replace("-", ":")];
+      const doc = nodeWrap?.document;
+      if (!doc) continue;
+
+      const fills = Array.isArray(doc?.fills) ? doc.fills : [];
+      const solid = fills.find((f: any) => f?.visible !== false && f?.type === "SOLID" && f?.color);
+      if (!solid?.color) continue;
+
+      const { r, g, b } = solid.color;
+      const a = solid.opacity ?? solid.color?.a ?? 1;
+      const hex = normalizeColorToHex(
+        `rgba(${Math.round(r * 255)}, ${Math.round(g * 255)}, ${Math.round(b * 255)}, ${a})`
+      );
+      if (!hex) continue;
+
+      // "Colors/Neutral/Gray300" → "Gray300" (마지막 세그먼트)
+      const parts = style.name.split("/");
+      const tokenName = parts[parts.length - 1].trim();
+      if (tokenName && !map.has(hex)) map.set(hex, tokenName);
+    }
+  } catch (_) { /* 실패 시 빈 맵 반환 — 토큰명 없이도 동작 */ }
+  return map;
+}
+
 export async function extractFigmaTokensFromNode(args: {
   personalAccessToken: string;
   fileKey: string;
@@ -66,6 +131,10 @@ export async function extractFigmaTokensFromNode(args: {
   const json = NodeResponseSchema.parse(await res.json());
   const nodeWrap = json.nodes[args.nodeId];
   if (!nodeWrap?.document) throw new Error("Figma node document를 찾지 못했습니다.");
+
+  // 파일 전체 색상 토큰 맵 빌드 (hex → tokenName)
+  // 실패해도 동작에 영향 없음 (빈 맵 반환)
+  const colorTokenMap = await buildFigmaColorTokenMap(args.personalAccessToken, args.fileKey);
 
   // Named Color Styles dict: styleKey → display name
   // "Colors/Gray 900" → last segment → "Gray 900"
@@ -169,8 +238,14 @@ export async function extractFigmaTokensFromNode(args: {
           : null;
 
       const fillStyleRef = n.styles?.fill;
-      const colorTokenName = isTextNode ? getStyleTokenName(fillStyleRef) : null;
-      const bgTokenName = isContainerNode ? getStyleTokenName(fillStyleRef) : null;
+      // 1순위: styles.fill 직접 참조 / 2순위: hex → tokenName 역방향 맵
+      const rawColorHex = rawFillColor ? normalizeColorToHex(rawFillColor) : null;
+      const colorTokenName = isTextNode
+        ? (getStyleTokenName(fillStyleRef) ?? (rawColorHex ? colorTokenMap.get(rawColorHex) ?? null : null))
+        : null;
+      const bgTokenName = isContainerNode
+        ? (getStyleTokenName(fillStyleRef) ?? (rawColorHex ? colorTokenMap.get(rawColorHex) ?? null : null))
+        : null;
 
       const token: FigmaToken = {
         className: name,
@@ -236,7 +311,8 @@ export async function extractFigmaTokensFromNode(args: {
                 n.type === "INSTANCE" ? (n.componentId ?? null) : (n.id ?? null),
                 componentTextColorMap,
                 stylesDict,
-                componentTextColorTokenMap
+                componentTextColorTokenMap,
+                colorTokenMap
               )
             : undefined,
         childTextNodes:
@@ -314,7 +390,8 @@ export function extractChildFoundation(
   componentId: string | null,
   componentTextColorMap: Map<string, string | null>,
   stylesDict?: Record<string, any>,
-  componentTextColorTokenMap?: Map<string, string | null>
+  componentTextColorTokenMap?: Map<string, string | null>,
+  colorTokenMap?: Map<string, string>
 ): FigmaToken["childFoundation"] {
   const cf: NonNullable<FigmaToken["childFoundation"]> = {};
 
@@ -350,17 +427,21 @@ export function extractChildFoundation(
           if (cf.colorToken == null) {
             cf.colorToken = getTokenName(n.styles?.fill);
           }
-          // 2순위: 없으면 COMPONENT 정의에서 미리 수집한 토큰명 사용
+          // 2순위: COMPONENT 정의에서 미리 수집한 토큰명
           if (cf.colorToken == null && componentId) {
             cf.colorToken = componentTextColorTokenMap?.get(`${componentId}:${n.name}`) ?? null;
+          }
+          // 3순위: 파일 전체 색상 토큰 맵으로 hex 역조회
+          if (cf.colorToken == null && colorTokenMap) {
+            cf.colorToken = colorTokenMap.get(cf.color!) ?? null;
           }
         } else if (componentId) {
           const inherited = componentTextColorMap.get(`${componentId}:${n.name}`);
           if (inherited) {
             cf.color = inherited;
-            // color가 컴포넌트에서 상속된 경우에도 토큰명 가져오기
             if (cf.colorToken == null) {
-              cf.colorToken = componentTextColorTokenMap?.get(`${componentId}:${n.name}`) ?? null;
+              cf.colorToken = componentTextColorTokenMap?.get(`${componentId}:${n.name}`)
+                ?? (colorTokenMap?.get(inherited) ?? null);
             }
           }
         }
