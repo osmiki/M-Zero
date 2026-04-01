@@ -147,6 +147,33 @@ export async function extractFigmaTokensFromNode(args: {
     return parts[parts.length - 1].trim() || null;
   };
 
+  // 트리 워크로 hex→tokenName 로컬 맵 빌드
+  // nodeWrap.styles(stylesDict)에는 외부 라이브러리 스타일 포함 모든 참조 스타일이 있으므로,
+  // n.styles?.fill이 있는 노드를 찾아 hex→tokenName 역맵을 구축.
+  // buildFigmaColorTokenMap보다 신뢰성이 높고 추가 API 호출 불필요.
+  {
+    const walkStack: any[] = [nodeWrap.document];
+    while (walkStack.length) {
+      const n = walkStack.pop();
+      if (!n || n.visible === false) continue;
+      if (n.styles?.fill) {
+        const tokenName = getStyleTokenName(n.styles.fill);
+        if (tokenName) {
+          const rawColor = extractSolidFillColor(n);
+          if (rawColor) {
+            const hex = normalizeColorToHex(rawColor);
+            if (hex && !colorTokenMap.has(hex)) {
+              colorTokenMap.set(hex, tokenName);
+            }
+          }
+        }
+      }
+      if (Array.isArray(n?.children)) {
+        for (let i = n.children.length - 1; i >= 0; i--) walkStack.push(n.children[i]);
+      }
+    }
+  }
+
   const max = typeof args.maxTokens === "number" && args.maxTokens > 0 ? Math.floor(args.maxTokens) : 500;
 
   // Pre-pass: COMPONENT 노드의 stroke + 텍스트 색상 데이터 수집
