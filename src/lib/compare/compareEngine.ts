@@ -44,6 +44,7 @@ export function compareTokenToComputed(
     ? {
         ...token.figma,
         color:          token.figma.color          ?? cf.color,
+        colorToken:     token.figma.colorToken      ?? cf.colorToken,
         fontSize:       token.figma.fontSize        ?? cf.fontSize,
         fontWeight:     token.figma.fontWeight      ?? cf.fontWeight,
         fontFamily:     token.figma.fontFamily      ?? cf.fontFamily,

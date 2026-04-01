@@ -10,6 +10,8 @@ export type FigmaToken = {
    */
   childFoundation?: {
     color?: string | null;
+    /** 자식 TEXT 노드의 Figma Named Color Style 토큰명 (예: "Gray 900") */
+    colorToken?: string | null;
     fontSize?: number | null;
     fontWeight?: number | null;
     fontFamily?: string | null;

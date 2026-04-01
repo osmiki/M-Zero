@@ -227,7 +227,8 @@ export async function extractFigmaTokensFromNode(args: {
             ? extractChildFoundation(
                 Array.isArray(n.children) ? n.children : [],
                 n.type === "INSTANCE" ? (n.componentId ?? null) : (n.id ?? null),
-                componentTextColorMap
+                componentTextColorMap,
+                stylesDict
               )
             : undefined,
         childTextNodes:
@@ -303,9 +304,19 @@ export function extractShadow(n: any): { x: number; y: number; blur: number; spr
 export function extractChildFoundation(
   children: any[],
   componentId: string | null,
-  componentTextColorMap: Map<string, string | null>
+  componentTextColorMap: Map<string, string | null>,
+  stylesDict?: Record<string, any>
 ): FigmaToken["childFoundation"] {
   const cf: NonNullable<FigmaToken["childFoundation"]> = {};
+
+  // stylesDict에서 토큰명 추출 헬퍼
+  const getTokenName = (styleRef: string | undefined): string | null => {
+    if (!styleRef || !stylesDict) return null;
+    const entry = stylesDict[styleRef];
+    if (!entry?.name) return null;
+    const parts = entry.name.split("/");
+    return parts[parts.length - 1].trim() || null;
+  };
 
   const stack: any[] = [...children].reverse();
   while (stack.length) {
@@ -326,6 +337,10 @@ export function extractChildFoundation(
         const raw = extractSolidFillColor(n);
         if (raw) {
           cf.color = normalizeColorToHex(raw);
+          // Named Color Style 토큰명도 함께 추출
+          if (cf.colorToken == null) {
+            cf.colorToken = getTokenName(n.styles?.fill);
+          }
         } else if (componentId) {
           const inherited = componentTextColorMap.get(`${componentId}:${n.name}`);
           if (inherited) cf.color = inherited;
