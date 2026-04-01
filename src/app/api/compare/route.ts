@@ -102,7 +102,7 @@ export async function POST(req: Request) {
 
     await assertPersonalAccessToken(token);
 
-    const { tokens } = await extractFigmaTokensFromNode({
+    const { tokens, _colorTokenDebug } = await extractFigmaTokensFromNode({
       personalAccessToken: token,
       fileKey,
       nodeId,
@@ -274,6 +274,7 @@ export async function POST(req: Request) {
         web: { href: web.href, extractedAt: web.extractedAt, viewport: web.viewport, scrollHeight: web.scrollHeight, scrollY: web.scrollY, webDataId: body.webDataId },
         figma: { fileKey, nodeId },
         thresholdPx: body.thresholdPx,
+        _colorTokenDebug,
       },
     });
   } catch (e) {

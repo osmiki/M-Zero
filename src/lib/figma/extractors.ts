@@ -85,7 +85,7 @@ export async function extractFigmaTokensFromNode(args: {
   fileKey: string;
   nodeId: string;
   maxTokens?: number;
-}): Promise<{ tokens: FigmaToken[] }> {
+}): Promise<{ tokens: FigmaToken[]; _colorTokenDebug?: Record<string, string> }> {
   const url = `https://api.figma.com/v1/files/${encodeURIComponent(args.fileKey)}/nodes?ids=${encodeURIComponent(
     args.nodeId
   )}`;
@@ -359,7 +359,15 @@ export async function extractFigmaTokensFromNode(args: {
     }
   }
 
-  return { tokens: Array.from(uniq.values()) };
+  // 디버그: 색상 토큰 맵 내용 + stylesDict 크기 반환
+  const _colorTokenDebug: Record<string, string> = {
+    colorTokenMapSize: String(colorTokenMap.size),
+    stylesDictSize: String(Object.keys(stylesDict).length),
+    fillStylesCount: String(Object.values(stylesDict).filter((s: any) => s?.styleType === "FILL" || s?.style_type === "FILL").length),
+    ...Object.fromEntries(Array.from(colorTokenMap.entries()).slice(0, 8).map(([k, v]) => [k, v])),
+  };
+
+  return { tokens: Array.from(uniq.values()), _colorTokenDebug };
 }
 
 // ---------------------------------------------------------------------------
