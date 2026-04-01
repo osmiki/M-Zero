@@ -83,6 +83,8 @@ export async function extractFigmaTokensFromNode(args: {
   // Pre-pass: COMPONENT 노드의 stroke + 텍스트 색상 데이터 수집
   const componentStrokeMap = new Map<string, { strokeWeight: number; strokes: any[] }>();
   const componentTextColorMap = new Map<string, string | null>();
+  // COMPONENT TEXT 자식의 Named Color Style 토큰명 (인스턴스 상속값 추적용)
+  const componentTextColorTokenMap = new Map<string, string | null>();
   {
     const preStack: any[] = [nodeWrap.document];
     while (preStack.length) {
@@ -99,6 +101,11 @@ export async function extractFigmaTokensFromNode(args: {
               const color = extractSolidFillColor(child);
               if (color) {
                 componentTextColorMap.set(`${componentId}:${child.name}`, normalizeColorToHex(color));
+              }
+              // Named Color Style 토큰명도 수집 (COMPONENT 정의에서만 styles.fill이 있음)
+              const tokenName = getStyleTokenName(child.styles?.fill);
+              if (tokenName) {
+                componentTextColorTokenMap.set(`${componentId}:${child.name}`, tokenName);
               }
             }
             if (Array.isArray(child.children)) collectTextColors(child.children, componentId);
@@ -228,7 +235,8 @@ export async function extractFigmaTokensFromNode(args: {
                 Array.isArray(n.children) ? n.children : [],
                 n.type === "INSTANCE" ? (n.componentId ?? null) : (n.id ?? null),
                 componentTextColorMap,
-                stylesDict
+                stylesDict,
+                componentTextColorTokenMap
               )
             : undefined,
         childTextNodes:
@@ -305,7 +313,8 @@ export function extractChildFoundation(
   children: any[],
   componentId: string | null,
   componentTextColorMap: Map<string, string | null>,
-  stylesDict?: Record<string, any>
+  stylesDict?: Record<string, any>,
+  componentTextColorTokenMap?: Map<string, string | null>
 ): FigmaToken["childFoundation"] {
   const cf: NonNullable<FigmaToken["childFoundation"]> = {};
 
@@ -337,13 +346,23 @@ export function extractChildFoundation(
         const raw = extractSolidFillColor(n);
         if (raw) {
           cf.color = normalizeColorToHex(raw);
-          // Named Color Style 토큰명도 함께 추출
+          // 1순위: 인스턴스 오버라이드에 styles.fill이 있으면 직접 추출
           if (cf.colorToken == null) {
             cf.colorToken = getTokenName(n.styles?.fill);
           }
+          // 2순위: 없으면 COMPONENT 정의에서 미리 수집한 토큰명 사용
+          if (cf.colorToken == null && componentId) {
+            cf.colorToken = componentTextColorTokenMap?.get(`${componentId}:${n.name}`) ?? null;
+          }
         } else if (componentId) {
           const inherited = componentTextColorMap.get(`${componentId}:${n.name}`);
-          if (inherited) cf.color = inherited;
+          if (inherited) {
+            cf.color = inherited;
+            // color가 컴포넌트에서 상속된 경우에도 토큰명 가져오기
+            if (cf.colorToken == null) {
+              cf.colorToken = componentTextColorTokenMap?.get(`${componentId}:${n.name}`) ?? null;
+            }
+          }
         }
       }
     }
