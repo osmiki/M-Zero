@@ -15,100 +15,13 @@ const NodeResponseSchema = z.object({
   ),
 });
 
-/**
- * Figma 파일의 모든 FILL 타입 Named Style을 가져와
- * hex → tokenName 역방향 맵을 빌드.
- * 인스턴스 자식 노드처럼 styles.fill 참조가 없어도 hex로 토큰명 조회 가능.
- */
-async function buildFigmaColorTokenMap(
-  personalAccessToken: string,
-  fileKey: string
-): Promise<{ map: Map<string, string>; debug: Record<string, string> }> {
-  const map = new Map<string, string>();
-  const debug: Record<string, string> = { fileKey };
-  try {
-    // Step 1: 파일 내 모든 Named Style 목록 가져오기
-    const stylesRes = await fetchWithTimeout(
-      `https://api.figma.com/v1/files/${encodeURIComponent(fileKey)}/styles`,
-      { headers: { "X-Figma-Token": personalAccessToken }, cache: "no-store" },
-      15_000
-    );
-    debug.stylesHttpStatus = String(stylesRes.status);
-    if (!stylesRes.ok) return { map, debug };
-
-    const stylesJson = await stylesRes.json();
-    const allStyles: any[] = stylesJson?.meta?.styles ?? [];
-    debug.totalStyles = String(allStyles.length);
-
-    const colorStyles: Array<{ node_id: string; name: string }> = allStyles
-      .filter((s: any) => s.style_type === "FILL" && s.node_id);
-    debug.fillStylesFound = String(colorStyles.length);
-    if (colorStyles.length === 0) return { map, debug };
-
-    // Step 2: 색상 스타일 노드들을 배치 쿼리 (최대 100개씩)
-    const BATCH = 100;
-    let resolvedCount = 0;
-    for (let i = 0; i < colorStyles.length; i += BATCH) {
-      const batch = colorStyles.slice(i, i + BATCH);
-      const nodeIds = batch.map((s) => s.node_id).join(",");
-      const nodesRes = await fetchWithTimeout(
-        `https://api.figma.com/v1/files/${encodeURIComponent(fileKey)}/nodes?ids=${nodeIds}`,
-        { headers: { "X-Figma-Token": personalAccessToken }, cache: "no-store" },
-        20_000
-      );
-      debug[`nodesHttpStatus_batch${i}`] = String(nodesRes.status);
-      if (!nodesRes.ok) continue;
-
-      const nodesJson = await nodesRes.json();
-      const nodeKeys = Object.keys(nodesJson?.nodes ?? {});
-      debug[`nodeKeys_batch${i}`] = nodeKeys.slice(0, 3).join(",");
-
-      for (const style of batch) {
-        // node_id "1:23" — response key는 "1:23" 또는 "1-23"
-        const nodeWrap = nodesJson?.nodes?.[style.node_id]
-          ?? nodesJson?.nodes?.[style.node_id.replace(/:/g, "-")]
-          ?? nodesJson?.nodes?.[style.node_id.replace(/-/g, ":")];
-        const doc = nodeWrap?.document;
-        if (!doc) continue;
-
-        // fills가 직접 있을 수도, children[0].fills에 있을 수도 있음
-        let fills = Array.isArray(doc?.fills) ? doc.fills : [];
-        if (fills.length === 0 && Array.isArray(doc?.children)) {
-          for (const child of doc.children) {
-            const cf = Array.isArray(child?.fills) ? child.fills : [];
-            if (cf.length > 0) { fills = cf; break; }
-          }
-        }
-        const solid = fills.find((f: any) => f?.visible !== false && f?.type === "SOLID" && f?.color);
-        if (!solid?.color) continue;
-
-        const { r, g, b } = solid.color;
-        const a = solid.opacity ?? solid.color?.a ?? 1;
-        const hex = normalizeColorToHex(
-          `rgba(${Math.round(r * 255)}, ${Math.round(g * 255)}, ${Math.round(b * 255)}, ${a})`
-        );
-        if (!hex) continue;
-
-        const parts = style.name.split("/");
-        const tokenName = parts[parts.length - 1].trim();
-        if (tokenName && !map.has(hex)) { map.set(hex, tokenName); resolvedCount++; }
-      }
-    }
-    debug.resolvedCount = String(resolvedCount);
-  } catch (e) {
-    debug.error = e instanceof Error ? e.message : String(e);
-  }
-  return { map, debug };
-}
 
 export async function extractFigmaTokensFromNode(args: {
   personalAccessToken: string;
   fileKey: string;
   nodeId: string;
   maxTokens?: number;
-  /** 디자인 시스템 라이브러리 파일 키 — 지정 시 해당 파일에서 색상 토큰명 역맵 빌드 */
-  libraryFileKey?: string;
-}): Promise<{ tokens: FigmaToken[]; _colorTokenDebug?: Record<string, string> }> {
+}): Promise<{ tokens: FigmaToken[] }> {
   const url = `https://api.figma.com/v1/files/${encodeURIComponent(args.fileKey)}/nodes?ids=${encodeURIComponent(
     args.nodeId
   )}`;
@@ -155,13 +68,6 @@ export async function extractFigmaTokensFromNode(args: {
   const nodeWrap = json.nodes[args.nodeId];
   if (!nodeWrap?.document) throw new Error("Figma node document를 찾지 못했습니다.");
 
-  // 색상 토큰 맵 빌드 (hex → tokenName)
-  // libraryFileKey가 있으면 라이브러리 파일에서, 없으면 현재 파일에서 빌드
-  const { map: colorTokenMap, debug: colorTokenBuildDebug } = await buildFigmaColorTokenMap(
-    args.personalAccessToken,
-    args.libraryFileKey ?? args.fileKey
-  );
-
   // Named Color Styles dict: styleKey → display name
   // "Colors/Gray 900" → last segment → "Gray 900"
   const stylesDict = nodeWrap.styles ?? {};
@@ -173,10 +79,8 @@ export async function extractFigmaTokensFromNode(args: {
     return parts[parts.length - 1].trim() || null;
   };
 
-  // 트리 워크로 hex→tokenName 로컬 맵 빌드
-  // nodeWrap.styles(stylesDict)에는 외부 라이브러리 스타일 포함 모든 참조 스타일이 있으므로,
-  // n.styles?.fill이 있는 노드를 찾아 hex→tokenName 역맵을 구축.
-  // buildFigmaColorTokenMap보다 신뢰성이 높고 추가 API 호출 불필요.
+  // hex → tokenName 맵: n.styles?.fill이 있는 노드에서만 구축 (트리 워크)
+  const colorTokenMap = new Map<string, string>();
   {
     const walkStack: any[] = [nodeWrap.document];
     while (walkStack.length) {
@@ -188,73 +92,13 @@ export async function extractFigmaTokensFromNode(args: {
           const rawColor = extractSolidFillColor(n);
           if (rawColor) {
             const hex = normalizeColorToHex(rawColor);
-            if (hex && !colorTokenMap.has(hex)) {
-              colorTokenMap.set(hex, tokenName);
-            }
+            if (hex && !colorTokenMap.has(hex)) colorTokenMap.set(hex, tokenName);
           }
         }
       }
       if (Array.isArray(n?.children)) {
         for (let i = n.children.length - 1; i >= 0; i--) walkStack.push(n.children[i]);
       }
-    }
-  }
-
-  // INSTANCE 노드의 componentId 수집 → 같은 파일에 정의된 COMPONENT 배치 조회
-  // 외부 라이브러리 컴포넌트에서 상속받은 색상은 n.styles?.fill이 없어 트리 워크로 못 잡음.
-  // 여기서 COMPONENT 정의를 직접 가져와 TEXT 자식의 스타일→hex 매핑을 보충.
-  {
-    const componentIds = new Set<string>();
-    const idStack: any[] = [nodeWrap.document];
-    while (idStack.length) {
-      const n = idStack.pop();
-      if (!n) continue;
-      if (n.type === "INSTANCE" && n.componentId) componentIds.add(n.componentId);
-      if (Array.isArray(n?.children)) {
-        for (let i = n.children.length - 1; i >= 0; i--) idStack.push(n.children[i]);
-      }
-    }
-
-    if (componentIds.size > 0) {
-      try {
-        const ids = Array.from(componentIds).slice(0, 120).join(",");
-        const compRes = await fetchWithTimeout(
-          `https://api.figma.com/v1/files/${encodeURIComponent(args.fileKey)}/nodes?ids=${encodeURIComponent(ids)}`,
-          { headers: { "X-Figma-Token": args.personalAccessToken }, cache: "no-store" },
-          20_000
-        );
-        if (compRes.ok) {
-          const compJson = await compRes.json();
-          for (const nodeWrapEntry of Object.values(compJson?.nodes ?? {})) {
-            const compDoc = (nodeWrapEntry as any)?.document;
-            if (!compDoc || compDoc.type !== "COMPONENT") continue;
-            const compStylesDict: Record<string, any> = (nodeWrapEntry as any)?.styles ?? {};
-            // COMPONENT 하위 TEXT 노드에서 styles.fill → hex 매핑 추출
-            const textStack: any[] = Array.isArray(compDoc.children) ? [...compDoc.children] : [];
-            while (textStack.length) {
-              const tn = textStack.pop();
-              if (!tn || tn.visible === false) continue;
-              if (tn.type === "TEXT" && tn.styles?.fill) {
-                const styleEntry = compStylesDict[tn.styles.fill];
-                if (styleEntry?.name) {
-                  const parts = styleEntry.name.split("/");
-                  const tokenName = parts[parts.length - 1].trim();
-                  if (tokenName) {
-                    const rawColor = extractSolidFillColor(tn);
-                    if (rawColor) {
-                      const hex = normalizeColorToHex(rawColor);
-                      if (hex && !colorTokenMap.has(hex)) colorTokenMap.set(hex, tokenName);
-                    }
-                  }
-                }
-              }
-              if (Array.isArray(tn?.children)) {
-                for (let i = tn.children.length - 1; i >= 0; i--) textStack.push(tn.children[i]);
-              }
-            }
-          }
-        }
-      } catch { /* 실패 시 스킵 — 토큰명 없이도 동작 */ }
     }
   }
 
@@ -444,15 +288,7 @@ export async function extractFigmaTokensFromNode(args: {
   }
 
   // 디버그: 색상 토큰 맵 내용 + 빌드 과정 상세 정보
-  const _colorTokenDebug: Record<string, string> = {
-    colorTokenMapSize: String(colorTokenMap.size),
-    stylesDictSize: String(Object.keys(stylesDict).length),
-    ...colorTokenBuildDebug,
-    // 맵 샘플 (최대 8개)
-    ...Object.fromEntries(Array.from(colorTokenMap.entries()).slice(0, 8).map(([k, v]) => [`map_${k}`, v])),
-  };
-
-  return { tokens: Array.from(uniq.values()), _colorTokenDebug };
+  return { tokens: Array.from(uniq.values()) };
 }
 
 // ---------------------------------------------------------------------------

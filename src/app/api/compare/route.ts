@@ -18,8 +18,6 @@ const BodySchema = z.object({
   thresholdPx: z.number().min(0).max(50).default(2),
   // 노드-클래스 매핑: { "Figma 노드명": "css-class" }
   nodeClassMapping: z.record(z.string(), z.string()).optional(),
-  /** 디자인 시스템 라이브러리 파일 키 (색상 토큰명 역조회용) */
-  libraryFileKey: z.string().optional(),
 });
 
 type MatchMethod = "mapping" | "name-exact" | "name-normalized" | "iou" | "text" | null;
@@ -104,12 +102,11 @@ export async function POST(req: Request) {
 
     await assertPersonalAccessToken(token);
 
-    const { tokens, _colorTokenDebug } = await extractFigmaTokensFromNode({
+    const { tokens } = await extractFigmaTokensFromNode({
       personalAccessToken: token,
       fileKey,
       nodeId,
       maxTokens: 1500,
-      libraryFileKey: body.libraryFileKey,
     });
 
     // compareMode는 토큰별로 결정 (compareConfig는 thresholdPx만 공유)
@@ -277,7 +274,6 @@ export async function POST(req: Request) {
         web: { href: web.href, extractedAt: web.extractedAt, viewport: web.viewport, scrollHeight: web.scrollHeight, scrollY: web.scrollY, webDataId: body.webDataId },
         figma: { fileKey, nodeId },
         thresholdPx: body.thresholdPx,
-        _colorTokenDebug,
       },
     });
   } catch (e) {
