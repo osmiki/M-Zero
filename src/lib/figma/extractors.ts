@@ -23,8 +23,9 @@ const NodeResponseSchema = z.object({
 async function buildFigmaColorTokenMap(
   personalAccessToken: string,
   fileKey: string
-): Promise<Map<string, string>> {
+): Promise<{ map: Map<string, string>; debug: Record<string, string> }> {
   const map = new Map<string, string>();
+  const debug: Record<string, string> = { fileKey };
   try {
     // Step 1: 파일 내 모든 Named Style 목록 가져오기
     const stylesRes = await fetchWithTimeout(
@@ -32,52 +33,72 @@ async function buildFigmaColorTokenMap(
       { headers: { "X-Figma-Token": personalAccessToken }, cache: "no-store" },
       15_000
     );
-    if (!stylesRes.ok) return map;
+    debug.stylesHttpStatus = String(stylesRes.status);
+    if (!stylesRes.ok) return { map, debug };
 
     const stylesJson = await stylesRes.json();
-    const colorStyles: Array<{ node_id: string; name: string }> = (stylesJson?.meta?.styles ?? [])
+    const allStyles: any[] = stylesJson?.meta?.styles ?? [];
+    debug.totalStyles = String(allStyles.length);
+
+    const colorStyles: Array<{ node_id: string; name: string }> = allStyles
       .filter((s: any) => s.style_type === "FILL" && s.node_id);
-    if (colorStyles.length === 0) return map;
+    debug.fillStylesFound = String(colorStyles.length);
+    if (colorStyles.length === 0) return { map, debug };
 
-    // Step 2: 색상 스타일 노드들을 배치 쿼리하여 실제 hex값 추출
-    // node_id는 "1:23" 형태 → URL 인코딩
-    const nodeIds = colorStyles.map((s) => s.node_id).join(",");
-    const nodesRes = await fetchWithTimeout(
-      `https://api.figma.com/v1/files/${encodeURIComponent(fileKey)}/nodes?ids=${encodeURIComponent(nodeIds)}`,
-      { headers: { "X-Figma-Token": personalAccessToken }, cache: "no-store" },
-      20_000
-    );
-    if (!nodesRes.ok) return map;
-
-    const nodesJson = await nodesRes.json();
-
-    // Step 3: hex → tokenName 맵 빌드
-    for (const style of colorStyles) {
-      // Figma API는 node_id를 "1:23" → "1-23" 키로 반환하기도 함
-      const nodeWrap = nodesJson?.nodes?.[style.node_id]
-        ?? nodesJson?.nodes?.[style.node_id.replace(":", "-")]
-        ?? nodesJson?.nodes?.[style.node_id.replace("-", ":")];
-      const doc = nodeWrap?.document;
-      if (!doc) continue;
-
-      const fills = Array.isArray(doc?.fills) ? doc.fills : [];
-      const solid = fills.find((f: any) => f?.visible !== false && f?.type === "SOLID" && f?.color);
-      if (!solid?.color) continue;
-
-      const { r, g, b } = solid.color;
-      const a = solid.opacity ?? solid.color?.a ?? 1;
-      const hex = normalizeColorToHex(
-        `rgba(${Math.round(r * 255)}, ${Math.round(g * 255)}, ${Math.round(b * 255)}, ${a})`
+    // Step 2: 색상 스타일 노드들을 배치 쿼리 (최대 100개씩)
+    const BATCH = 100;
+    let resolvedCount = 0;
+    for (let i = 0; i < colorStyles.length; i += BATCH) {
+      const batch = colorStyles.slice(i, i + BATCH);
+      const nodeIds = batch.map((s) => s.node_id).join(",");
+      const nodesRes = await fetchWithTimeout(
+        `https://api.figma.com/v1/files/${encodeURIComponent(fileKey)}/nodes?ids=${nodeIds}`,
+        { headers: { "X-Figma-Token": personalAccessToken }, cache: "no-store" },
+        20_000
       );
-      if (!hex) continue;
+      debug[`nodesHttpStatus_batch${i}`] = String(nodesRes.status);
+      if (!nodesRes.ok) continue;
 
-      // "Colors/Neutral/Gray300" → "Gray300" (마지막 세그먼트)
-      const parts = style.name.split("/");
-      const tokenName = parts[parts.length - 1].trim();
-      if (tokenName && !map.has(hex)) map.set(hex, tokenName);
+      const nodesJson = await nodesRes.json();
+      const nodeKeys = Object.keys(nodesJson?.nodes ?? {});
+      debug[`nodeKeys_batch${i}`] = nodeKeys.slice(0, 3).join(",");
+
+      for (const style of batch) {
+        // node_id "1:23" — response key는 "1:23" 또는 "1-23"
+        const nodeWrap = nodesJson?.nodes?.[style.node_id]
+          ?? nodesJson?.nodes?.[style.node_id.replace(/:/g, "-")]
+          ?? nodesJson?.nodes?.[style.node_id.replace(/-/g, ":")];
+        const doc = nodeWrap?.document;
+        if (!doc) continue;
+
+        // fills가 직접 있을 수도, children[0].fills에 있을 수도 있음
+        let fills = Array.isArray(doc?.fills) ? doc.fills : [];
+        if (fills.length === 0 && Array.isArray(doc?.children)) {
+          for (const child of doc.children) {
+            const cf = Array.isArray(child?.fills) ? child.fills : [];
+            if (cf.length > 0) { fills = cf; break; }
+          }
+        }
+        const solid = fills.find((f: any) => f?.visible !== false && f?.type === "SOLID" && f?.color);
+        if (!solid?.color) continue;
+
+        const { r, g, b } = solid.color;
+        const a = solid.opacity ?? solid.color?.a ?? 1;
+        const hex = normalizeColorToHex(
+          `rgba(${Math.round(r * 255)}, ${Math.round(g * 255)}, ${Math.round(b * 255)}, ${a})`
+        );
+        if (!hex) continue;
+
+        const parts = style.name.split("/");
+        const tokenName = parts[parts.length - 1].trim();
+        if (tokenName && !map.has(hex)) { map.set(hex, tokenName); resolvedCount++; }
+      }
     }
-  } catch (_) { /* 실패 시 빈 맵 반환 — 토큰명 없이도 동작 */ }
-  return map;
+    debug.resolvedCount = String(resolvedCount);
+  } catch (e) {
+    debug.error = e instanceof Error ? e.message : String(e);
+  }
+  return { map, debug };
 }
 
 export async function extractFigmaTokensFromNode(args: {
@@ -136,7 +157,7 @@ export async function extractFigmaTokensFromNode(args: {
 
   // 색상 토큰 맵 빌드 (hex → tokenName)
   // libraryFileKey가 있으면 라이브러리 파일에서, 없으면 현재 파일에서 빌드
-  const colorTokenMap = await buildFigmaColorTokenMap(
+  const { map: colorTokenMap, debug: colorTokenBuildDebug } = await buildFigmaColorTokenMap(
     args.personalAccessToken,
     args.libraryFileKey ?? args.fileKey
   );
@@ -422,12 +443,13 @@ export async function extractFigmaTokensFromNode(args: {
     }
   }
 
-  // 디버그: 색상 토큰 맵 내용 + stylesDict 크기 반환
+  // 디버그: 색상 토큰 맵 내용 + 빌드 과정 상세 정보
   const _colorTokenDebug: Record<string, string> = {
     colorTokenMapSize: String(colorTokenMap.size),
     stylesDictSize: String(Object.keys(stylesDict).length),
-    fillStylesCount: String(Object.values(stylesDict).filter((s: any) => s?.styleType === "FILL" || s?.style_type === "FILL").length),
-    ...Object.fromEntries(Array.from(colorTokenMap.entries()).slice(0, 8).map(([k, v]) => [k, v])),
+    ...colorTokenBuildDebug,
+    // 맵 샘플 (최대 8개)
+    ...Object.fromEntries(Array.from(colorTokenMap.entries()).slice(0, 8).map(([k, v]) => [`map_${k}`, v])),
   };
 
   return { tokens: Array.from(uniq.values()), _colorTokenDebug };
