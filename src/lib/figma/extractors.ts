@@ -85,6 +85,8 @@ export async function extractFigmaTokensFromNode(args: {
   fileKey: string;
   nodeId: string;
   maxTokens?: number;
+  /** 디자인 시스템 라이브러리 파일 키 — 지정 시 해당 파일에서 색상 토큰명 역맵 빌드 */
+  libraryFileKey?: string;
 }): Promise<{ tokens: FigmaToken[]; _colorTokenDebug?: Record<string, string> }> {
   const url = `https://api.figma.com/v1/files/${encodeURIComponent(args.fileKey)}/nodes?ids=${encodeURIComponent(
     args.nodeId
@@ -132,9 +134,12 @@ export async function extractFigmaTokensFromNode(args: {
   const nodeWrap = json.nodes[args.nodeId];
   if (!nodeWrap?.document) throw new Error("Figma node document를 찾지 못했습니다.");
 
-  // 파일 전체 색상 토큰 맵 빌드 (hex → tokenName)
-  // 실패해도 동작에 영향 없음 (빈 맵 반환)
-  const colorTokenMap = await buildFigmaColorTokenMap(args.personalAccessToken, args.fileKey);
+  // 색상 토큰 맵 빌드 (hex → tokenName)
+  // libraryFileKey가 있으면 라이브러리 파일에서, 없으면 현재 파일에서 빌드
+  const colorTokenMap = await buildFigmaColorTokenMap(
+    args.personalAccessToken,
+    args.libraryFileKey ?? args.fileKey
+  );
 
   // Named Color Styles dict: styleKey → display name
   // "Colors/Gray 900" → last segment → "Gray 900"

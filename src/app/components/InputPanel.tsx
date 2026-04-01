@@ -8,6 +8,8 @@ import type { HistoryEntry } from "../hooks/useHistory";
 type Props = {
   figmaUrlOrKey: string;
   setFigmaUrlOrKey: (v: string) => void;
+  libraryFileKey: string;
+  setLibraryFileKey: (v: string) => void;
   figmaToken: string;
   setFigmaToken: (v: string) => void;
   serverTokenConfigured: boolean;
@@ -31,6 +33,7 @@ type Props = {
 
 export function InputPanel({
   figmaUrlOrKey, setFigmaUrlOrKey,
+  libraryFileKey, setLibraryFileKey,
   figmaToken, setFigmaToken,
   serverTokenConfigured,
   viewportPreset, setViewportPreset,
@@ -109,6 +112,11 @@ export function InputPanel({
         <div className="field">
           <div className="label">Figma Dev Mode URL 또는 File Key</div>
           <input className="input" placeholder="https://www.figma.com/file/<fileKey>/... 또는 fileKey" value={figmaUrlOrKey} onChange={(e) => setFigmaUrlOrKey(e.target.value)} />
+        </div>
+
+        <div className="field" style={{ marginTop: 8 }}>
+          <div className="label" style={{ color: "rgba(255,255,255,0.45)" }}>디자인 시스템 라이브러리 File Key <span style={{ fontSize: 10, opacity: 0.6 }}>(색상 토큰명 표시용, 선택)</span></div>
+          <input className="input" placeholder="ixP77xguW48OLFKZBpyLZx" value={libraryFileKey} onChange={(e) => setLibraryFileKey(e.target.value)} />
         </div>
 
         {serverTokenConfigured ? (

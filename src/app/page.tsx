@@ -26,6 +26,7 @@ export default function HomePage() {
   const [showAll, setShowAll] = useState(true);
   const [serverTokenConfigured, setServerTokenConfigured] = useState(false);
   const [nodeClassMappingRaw, setNodeClassMappingRaw] = useState("");
+  const [libraryFileKey, setLibraryFileKey] = useState("ixP77xguW48OLFKZBpyLZx");
 
   // Annotations
   const figmaFileKey = resp && resp.ok ? resp.meta.figma.fileKey : null;
@@ -135,6 +136,7 @@ export default function HomePage() {
           webDataId,
           figma: { devModeUrlOrFileKey: figmaUrlOrKey, personalAccessToken: figmaToken || undefined },
           thresholdPx,
+          libraryFileKey: libraryFileKey.trim() || undefined,
         }),
       });
       const json = (await r.json()) as CompareResponse;
@@ -174,6 +176,7 @@ export default function HomePage() {
       <div className="grid">
         <InputPanel
           figmaUrlOrKey={figmaUrlOrKey} setFigmaUrlOrKey={setFigmaUrlOrKey}
+          libraryFileKey={libraryFileKey} setLibraryFileKey={setLibraryFileKey}
           figmaToken={figmaToken} setFigmaToken={setFigmaToken}
           serverTokenConfigured={serverTokenConfigured}
           viewportPreset={viewportPreset} setViewportPreset={setViewportPreset}
